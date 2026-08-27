@@ -819,3 +819,2134 @@ def start_turn_thread():
     thread.start()
     print("✅ ترد پردازش نوبت شروع شد")
 
+# =============================================
+# ۸. کامندهای اصلی
+# =============================================
+
+@bot.message_handler(commands=['start'])
+def start_command(message):
+    """دستور start - شروع بازی"""
+    user_id = message.from_user.id
+    chat_id = message.chat.id
+    
+    # بررسی آیا کاربر کشوری دارد
+    country = get_country_by_user(user_id)
+    
+    if country:
+        # کاربر قبلاً کشور دارد
+        menu = main_menu(user_id)
+        bot.send_message(chat_id, 
+            f"🎮 به بازی جنگ جهانی خوش آمدید!\n"
+            f"🏳️ کشور شما: {country[2]} {country[1]}\n"
+            f"⭐ VIP: {'بله' if country[3] else 'خیر'}\n"
+            f"💰 پول: {country[10]:,}\n"
+            f"🛢️ نفت: {country[11]}\n"
+            f"👥 جمعیت: {country[18]:,}",
+            reply_markup=menu, parse_mode='HTML')
+    else:
+        # کاربر کشور ندارد - نمایش کشورهای آزاد
+        free = get_free_countries()
+        if not free:
+            bot.send_message(chat_id, "❌ هیچ کشور آزادی وجود ندارد! با ادمین تماس بگیرید.")
+            return
+        
+        # پیشنهاد کشورهای آزاد به کاربر
+        menu = types.InlineKeyboardMarkup(row_width=2)
+        for c in free[:10]:
+            menu.add(types.InlineKeyboardButton(
+                f"{c[2]} {c[1]} {'⭐' if c[3] else ''}",
+                callback_data=f"take_country_{c[0]}"
+            ))
+        bot.send_message(chat_id, 
+            "🌍 به بازی جنگ جهانی خوش آمدید!\n"
+            "یک کشور را انتخاب کنید:\n\n"
+            "⚠️ توجه: انتخاب کشور به معنی پذیرش قوانین بازی است.",
+            reply_markup=menu)
+
+@bot.message_handler(commands=['help'])
+def help_command(message):
+    """راهنمای بازی"""
+    help_text = """
+📚 **راهنمای بازی جنگ جهانی**
+
+🎯 **هدف بازی:** تبدیل کشور خود به قدرتمندترین کشور جهان
+
+🏳️ **کشورها:** ۱۰۰ کشور با پرچم و منابع مختلف
+
+⭐ **VIP:** ۲۰ کشور برتر با منابع ۱۰ برابر
+
+💰 **اقتصاد:** هر ۱ ساعت درآمد دریافت می‌کنید
+
+🌍 **شهرها:** هر کشور می‌تواند تا ۵ شهر داشته باشد
+
+⚔️ **نیروها:** خرید و استقرار نیروهای نظامی
+
+🛡️ **پدافند:** حفاظت از شهرها در برابر حملات
+
+🚀 **موشک‌ها:** حملات موشکی به دشمن
+
+🛸 **پهپادها:** عملیات شناسایی و حمله
+
+💻 **سایبری:** حملات و دفاع سایبری
+
+🤝 **دیپلماسی:** اتحاد، پیمان، آتش‌بس
+
+🕵️ **اطلاعات:** جاسوسی از کشورهای دیگر
+
+⚔️ **جنگ:** اعلام جنگ و حمله به کشورهای دیگر
+
+📍 **منوی اصلی:** /menu
+
+👑 **کامندهای مدیریت:** فقط برای ادمین‌ها
+"""
+    bot.send_message(message.chat.id, help_text, parse_mode='Markdown')
+
+@bot.message_handler(commands=['menu'])
+def menu_command(message):
+    """نمایش منوی اصلی"""
+    user_id = message.from_user.id
+    
+    country = get_country_by_user(user_id)
+    if not country:
+        bot.reply_to(message, "❌ شما هیچ کشوری ندارید! از /start استفاده کنید.")
+        return
+    
+    menu = main_menu(user_id)
+    bot.send_message(message.chat.id, "📍 منوی اصلی", reply_markup=menu)
+
+@bot.message_handler(commands=['mycountry'])
+def my_country_command(message):
+    """اطلاعات کشور من"""
+    user_id = message.from_user.id
+    
+    country = get_country_by_user(user_id)
+    if not country:
+        bot.reply_to(message, "❌ شما هیچ کشوری ندارید!")
+        return
+    
+    info = f"🏳️ {country[2]} **{country[1]}**\n"
+    info += f"⭐ VIP: {'✅' if country[3] else '❌'}\n\n"
+    info += f"💰 پول: {country[10]:,}\n"
+    info += f"📈 درآمد هر نوبت: {calculate_income(country[0]):,}\n"
+    info += f"🛢️ نفت: {country[11]}\n"
+    info += f"📈 تولید نفت: {calculate_oil_income(country[0])}\n"
+    info += f"👥 جمعیت: {country[18]:,}\n"
+    info += f"😊 رضایت: {country[19]}%\n"
+    info += f"⚔️ آمادگی نظامی: {country[20]}%\n\n"
+    
+    if country[4]:
+        status = "🔓 باز" if country[6] else "🔒 بسته"
+        info += f"🌊 {country[5]}: {status}\n"
+    
+    if country[7]:
+        info += "🚫 **این کشور تحریم شده است!**\n"
+    
+    # آمار نظامی
+    units = get_military_units(country[0])
+    total_power = sum(u[5] * u[3] for u in units)  # power * count
+    
+    missiles = get_missiles(country[0])
+    total_missile_power = sum(m[5] * m[3] for m in missiles)  # power * count
+    
+    info += f"\n⚔️ قدرت کل ارتش: {total_power:,}\n"
+    info += f"🚀 قدرت کل موشکی: {total_missile_power:,}\n"
+    info += f"🏙️ تعداد شهرها: {len(get_cities(country[0]))}"
+    
+    bot.reply_to(message, info, parse_mode='Markdown')
+
+@bot.message_handler(commands=['countries'])
+def countries_command(message):
+    """لیست همه کشورها"""
+    countries = get_all_countries()
+    
+    text = "🌍 **لیست کشورها:**\n\n"
+    vip_count = 0
+    normal_count = 0
+    
+    for c in countries:
+        owner = "👤 گرفته شده" if c[9] else "🆓 آزاد"
+        if c[3]:
+            vip_count += 1
+            text += f"⭐ {c[2]} {c[1]} - {owner}\n"
+    
+    text += f"\n⭐ VIP: {vip_count} کشور\n"
+    text += f"📋 عادی: {len(countries) - vip_count} کشور"
+    
+    bot.reply_to(message, text, parse_mode='Markdown')
+
+# =============================================
+# ۹. منوهای Inline Keyboard
+# =============================================
+
+def main_menu(user_id: int) -> types.InlineKeyboardMarkup:
+    """منوی اصلی"""
+    markup = types.InlineKeyboardMarkup(row_width=2)
+    
+    buttons = [
+        ("🌍 کشور من", f"country_{user_id}"),
+        ("💰 اقتصاد", f"economy_{user_id}"),
+        ("🏙️ شهرها", f"cities_{user_id}"),
+        ("⚔️ ارتش", f"army_{user_id}"),
+        ("✈️ نیروی هوایی", f"airforce_{user_id}"),
+        ("🚢 نیروی دریایی", f"navy_{user_id}"),
+        ("🛡️ پدافند", f"defense_{user_id}"),
+        ("🚀 موشک‌ها", f"missiles_{user_id}"),
+        ("🛸 پهپادها", f"drones_{user_id}"),
+        ("💻 سایبری", f"cyber_{user_id}"),
+        ("🤝 دیپلماسی", f"diplomacy_{user_id}"),
+        ("🌐 تجارت", f"trade_{user_id}"),
+        ("🕵️ اطلاعات", f"intel_{user_id}"),
+        ("⚔️ جنگ", f"war_{user_id}"),
+        ("🏳️ اتحادها", f"alliances_{user_id}"),
+        ("📊 آمار", f"stats_{user_id}"),
+    ]
+    
+    for label, callback in buttons:
+        markup.add(types.InlineKeyboardButton(label, callback_data=callback))
+    
+    # دکمه پنل مدیریت برای ادمین‌ها
+    if is_admin(user_id):
+        markup.add(types.InlineKeyboardButton("🛡️ پنل مدیریت", callback_data=f"admin_panel_{user_id}"))
+    
+    return markup
+
+# =============================================
+# ۱۰. هندلرهای Callback Query
+# =============================================
+
+@bot.callback_query_handler(func=lambda call: True)
+def callback_handler(call):
+    """هندلر اصلی Callback Query"""
+    user_id = call.from_user.id
+    data = call.data
+    chat_id = call.message.chat.id
+    
+    # ========== انتخاب کشور ==========
+    if data.startswith('take_country_'):
+        country_id = int(data.split('_')[2])
+        country = get_country_by_id(country_id)
+        
+        if not country:
+            bot.answer_callback_query(call.id, "❌ کشور یافت نشد!", show_alert=True)
+            return
+        
+        if country[9] is not None:
+            bot.answer_callback_query(call.id, "❌ این کشور قبلاً گرفته شده!", show_alert=True)
+            return
+        
+        # بررسی اینکه کاربر قبلاً کشوری ندارد
+        existing = get_country_by_user(user_id)
+        if existing:
+            bot.answer_callback_query(call.id, f"❌ شما قبلاً کشور {existing[1]} دارید!", show_alert=True)
+            return
+        
+        # دادن کشور به کاربر
+        cursor.execute("""
+            UPDATE countries SET owner_id = ?, chat_id = ?
+            WHERE id = ?
+        """, (user_id, chat_id, country_id))
+        conn.commit()
+        
+        log_action(user_id, 'take_country', country[1], '')
+        
+        bot.answer_callback_query(call.id, f"✅ کشور {country[1]} به شما داده شد!")
+        
+        # نمایش منوی اصلی
+        menu = main_menu(user_id)
+        bot.edit_message_text(
+            f"🎮 به بازی خوش آمدید!\n🏳️ کشور شما: {country[2]} {country[1]}",
+            chat_id, call.message.message_id,
+            reply_markup=menu, parse_mode='HTML'
+        )
+    
+    # ========== منوی اصلی ==========
+    elif data.startswith('country_'):
+        my_country_command(call.message)
+        bot.answer_callback_query(call.id)
+    
+    elif data.startswith('economy_'):
+        # منوی اقتصاد
+        country = get_country_by_user(user_id)
+        if not country:
+            bot.send_message(chat_id, "❌ شما هیچ کشوری ندارید!")
+            bot.answer_callback_query(call.id)
+            return
+        
+        text = f"💰 **اقتصاد {country[2]} {country[1]}**\n\n"
+        text += f"💵 پول: {country[10]:,}\n"
+        text += f"📈 درآمد هر نوبت: {calculate_income(country[0]):,}\n"
+        text += f"🛢️ نفت: {country[11]}\n"
+        text += f"📈 تولید نفت: {calculate_oil_income(country[0])}\n"
+        text += f"👥 جمعیت: {country[18]:,}\n"
+        text += f"😊 رضایت: {country[19]}%\n"
+        text += f"⚔️ آمادگی نظامی: {country[20]}%\n"
+        
+        markup = types.InlineKeyboardMarkup()
+        markup.add(types.InlineKeyboardButton("🔙 بازگشت", callback_data=f"back_menu_{user_id}"))
+        
+        bot.edit_message_text(text, chat_id, call.message.message_id, 
+                             reply_markup=markup, parse_mode='Markdown')
+        bot.answer_callback_query(call.id)
+    
+    # ========== شهرها ==========
+    elif data.startswith('cities_'):
+        country = get_country_by_user(user_id)
+        if not country:
+            bot.send_message(chat_id, "❌ شما هیچ کشوری ندارید!")
+            bot.answer_callback_query(call.id)
+            return
+        
+        cities = get_cities(country[0])
+        
+        if not cities:
+            # ایجاد شهر پایتخت
+            cursor.execute("""
+                INSERT INTO cities (country_id, name, is_capital, population)
+                VALUES (?, 'پایتخت', 1, 100000)
+            """, (country[0],))
+            conn.commit()
+            cities = get_cities(country[0])
+        
+        markup = types.InlineKeyboardMarkup(row_width=1)
+        for city in cities:
+            markup.add(types.InlineKeyboardButton(
+                f"🏙️ {city[2]} (جمعیت: {city[3]:,})",
+                callback_data=f"city_{city[0]}"
+            ))
+        
+        markup.add(types.InlineKeyboardButton("➕ شهر جدید", callback_data=f"new_city_{country[0]}"))
+        markup.add(types.InlineKeyboardButton("🔙 بازگشت", callback_data=f"back_menu_{user_id}"))
+        
+        bot.edit_message_text(
+            f"🏙️ **شهرهای {country[2]} {country[1]}**\n"
+            f"📊 تعداد شهرها: {len(cities)}",
+            chat_id, call.message.message_id,
+            reply_markup=markup, parse_mode='Markdown'
+        )
+        bot.answer_callback_query(call.id)
+    
+    elif data.startswith('city_'):
+        city_id = int(data.split('_')[1])
+        city = get_city(city_id)
+        
+        if not city:
+            bot.answer_callback_query(call.id, "❌ شهر یافت نشد!")
+            return
+        
+        text = f"🏙️ **{city[2]}**\n"
+        text += f"👥 جمعیت: {city[3]:,}\n"
+        text += f"🏗️ زیرساخت: سطح {city[4]}\n"
+        text += f"🛡️ پدافند: سطح {city[5]}\n"
+        text += f"⚡ نیروگاه: {'✅' if city[6] else '❌'}\n"
+        text += f"🌐 اینترنت: {'✅' if city[7] else '❌'}\n"
+        text += f"🚫 قرنطینه: {'✅' if city[8] else '❌'}\n"
+        text += f"🏴 اشغال: {'✅' if city[9] else '❌'}\n"
+        text += f"🏭 کارخانه‌ها: {len(json.loads(city[10] or '{}'))}\n"
+        text += f"🏢 شرکت‌ها: {len(json.loads(city[11] or '{}'))}\n"
+        text += f"🛡️ پدافند مستقر: {len(json.loads(city[12] or '[]'))}\n"
+        text += f"⚔️ نیروهای مستقر: {sum(json.loads(city[13] or '{}').values())}\n"
+        
+        markup = types.InlineKeyboardMarkup(row_width=2)
+        markup.add(
+            types.InlineKeyboardButton("🏗️ زیرساخت", callback_data=f"build_infra_{city_id}"),
+            types.InlineKeyboardButton("🛡️ پدافند", callback_data=f"build_defense_{city_id}")
+        )
+        markup.add(
+            types.InlineKeyboardButton("⚡ نیروگاه", callback_data=f"build_power_{city_id}"),
+            types.InlineKeyboardButton("🏭 کارخانه", callback_data=f"build_factory_{city_id}")
+        )
+        markup.add(
+            types.InlineKeyboardButton("🏢 شرکت", callback_data=f"build_company_{city_id}"),
+            types.InlineKeyboardButton("🔫 استقرار نیرو", callback_data=f"deploy_units_{city_id}")
+        )
+        markup.add(
+            types.InlineKeyboardButton("🚫 قرنطینه", callback_data=f"quarantine_{city_id}"),
+            types.InlineKeyboardButton("🌐 ملی کردن اینترنت", callback_data=f"nationalize_internet_{city_id}")
+        )
+        markup.add(
+            types.InlineKeyboardButton("✏️ تغییر نام", callback_data=f"rename_city_{city_id}"),
+            types.InlineKeyboardButton("🔙 بازگشت", callback_data=f"cities_{user_id}")
+        )
+        
+        bot.edit_message_text(text, chat_id, call.message.message_id,
+                             reply_markup=markup, parse_mode='Markdown')
+        bot.answer_callback_query(call.id)
+    
+    # ========== ساخت شهر جدید ==========
+    elif data.startswith('new_city_'):
+        country_id = int(data.split('_')[2])
+        
+        # بررسی تعداد شهرها (حداکثر ۵)
+        cities = get_cities(country_id)
+        if len(cities) >= 5:
+            bot.answer_callback_query(call.id, "❌ حداکثر ۵ شهر مجاز است!", show_alert=True)
+            return
+        
+        # ایجاد شهر جدید
+        cursor.execute("""
+            INSERT INTO cities (country_id, name, population)
+            VALUES (?, ?, ?)
+        """, (country_id, f"شهر {len(cities) + 1}", 50000))
+        conn.commit()
+        
+        bot.answer_callback_query(call.id, "✅ شهر جدید ایجاد شد!")
+        
+        # به‌روزرسانی منوی شهرها
+        country = get_country_by_user(user_id)
+        markup = types.InlineKeyboardMarkup(row_width=1)
+        for city in get_cities(country[0]):
+            markup.add(types.InlineKeyboardButton(
+                f"🏙️ {city[2]} (جمعیت: {city[3]:,})",
+                callback_data=f"city_{city[0]}"
+            ))
+        markup.add(types.InlineKeyboardButton("➕ شهر جدید", callback_data=f"new_city_{country[0]}"))
+        markup.add(types.InlineKeyboardButton("🔙 بازگشت", callback_data=f"back_menu_{user_id}"))
+        
+        bot.edit_message_text(
+            f"🏙️ **شهرهای {country[2]} {country[1]}**",
+            chat_id, call.message.message_id,
+            reply_markup=markup, parse_mode='Markdown'
+        )
+    
+    # ========== ساختن زیرساخت ==========
+    elif data.startswith('build_infra_'):
+        city_id = int(data.split('_')[2])
+        city = get_city(city_id)
+        country = get_country_by_id(city[1])
+        
+        cost = 100000 * (city[4] + 1)
+        
+        if country[10] < cost:
+            bot.answer_callback_query(call.id, f"❌ پول کافی نیست! نیاز به {cost:,} پول", show_alert=True)
+            return
+        
+        # کسر پول و افزایش زیرساخت
+        cursor.execute("""
+            UPDATE countries SET money = money - ? WHERE id = ?
+        """, (cost, country[0]))
+        
+        cursor.execute("""
+            UPDATE cities SET infrastructure_level = infrastructure_level + 1
+            WHERE id = ?
+        """, (city_id,))
+        conn.commit()
+        
+        log_action(user_id, 'build_infrastructure', city[2], f'level {city[4]+1}')
+        bot.answer_callback_query(call.id, f"✅ زیرساخت به سطح {city[4]+1} ارتقا یافت!")
+        
+        # بازگشت به صفحه شهر
+        callback_handler(call)  # این باعث بازگشت به منوی شهر میشه
+    
+    # ========== ساخت پدافند ==========
+    elif data.startswith('build_defense_'):
+        city_id = int(data.split('_')[2])
+        city = get_city(city_id)
+        country = get_country_by_id(city[1])
+        
+        cost = 200000 * (city[5] + 1)
+        
+        if country[10] < cost:
+            bot.answer_callback_query(call.id, f"❌ پول کافی نیست! نیاز به {cost:,} پول", show_alert=True)
+            return
+        
+        cursor.execute("""
+            UPDATE countries SET money = money - ? WHERE id = ?
+        """, (cost, country[0]))
+        
+        cursor.execute("""
+            UPDATE cities SET defense_level = defense_level + 1
+            WHERE id = ?
+        """, (city_id,))
+        conn.commit()
+        
+        log_action(user_id, 'build_defense', city[2], f'level {city[5]+1}')
+        bot.answer_callback_query(call.id, f"✅ پدافند شهر به سطح {city[5]+1} ارتقا یافت!")
+        callback_handler(call)
+    
+    # ========== برگشت به منو ==========
+    elif data.startswith('back_menu_'):
+        menu = main_menu(user_id)
+        bot.edit_message_text("📍 منوی اصلی", chat_id, call.message.message_id, reply_markup=menu)
+        bot.answer_callback_query(call.id)
+    
+    # ========== پنل مدیریت ==========
+    elif data.startswith('admin_panel_'):
+        if not is_admin(user_id):
+            bot.answer_callback_query(call.id, "❌ شما ادمین نیستید!", show_alert=True)
+            return
+        
+        markup = admin_panel_menu()
+        bot.edit_message_text("🛡️ **پنل مدیریت**", chat_id, call.message.message_id,
+                             reply_markup=markup, parse_mode='Markdown')
+        bot.answer_callback_query(call.id)
+    
+    else:
+        bot.answer_callback_query(call.id, "❌ دستور نامعتبر!")
+
+# =============================================
+# ۱۱. پنل مدیریت
+# =============================================
+
+def admin_panel_menu() -> types.InlineKeyboardMarkup:
+    """منوی پنل مدیریت"""
+    markup = types.InlineKeyboardMarkup(row_width=2)
+    
+    buttons = [
+        ("🌍 مدیریت کشورها", "admin_countries"),
+        ("💰 مدیریت اقتصاد", "admin_economy"),
+        ("⚔️ مدیریت نظامی", "admin_military"),
+        ("🚀 مدیریت موشک‌ها", "admin_missiles"),
+        ("⚙️ تنظیمات", "admin_settings"),
+        ("📊 لاگ‌ها", "admin_logs"),
+        ("🔙 بازگشت", "back_menu")
+    ]
+    
+    for label, callback in buttons:
+        markup.add(types.InlineKeyboardButton(label, callback_data=callback))
+    
+    return markup
+
+# =============================================
+# ۱۲. کامندهای ادمین
+# =============================================
+
+@bot.message_handler(commands=['givecountry'])
+def give_country_command(message):
+    """دادن کشور به کاربر - /givecountry @username CountryName"""
+    if not is_admin(message.from_user.id):
+        bot.reply_to(message, "❌ شما ادمین نیستید!")
+        return
+    
+    parts = message.text.split()
+    if len(parts) < 3:
+        bot.reply_to(message, "❌ استفاده: /givecountry @username CountryName")
+        return
+    
+    target = parts[1]
+    country_name = " ".join(parts[2:])
+    
+    # تبدیل username به ID
+    if target.startswith('@'):
+        try:
+            user = bot.get_chat(target)
+            target_id = user.id
+        except:
+            bot.reply_to(message, "❌ کاربر یافت نشد!")
+            return
+    else:
+        try:
+            target_id = int(target)
+        except:
+            bot.reply_to(message, "❌ شناسه معتبر نیست!")
+            return
+    
+    # بررسی اینکه کاربر قبلاً کشوری ندارد
+    existing = get_country_by_user(target_id)
+    if existing:
+        bot.reply_to(message, f"❌ کاربر قبلاً کشور {existing[1]} رو داره!")
+        return
+    
+    # بررسی وجود کشور
+    country = get_country_by_name(country_name)
+    if not country:
+        bot.reply_to(message, f"❌ کشور {country_name} وجود ندارد!")
+        return
+    
+    # بررسی آزاد بودن کشور
+    if country[9] is not None:
+        bot.reply_to(message, f"❌ کشور {country_name} قبلاً داده شده!")
+        return
+    
+    # دادن کشور
+    cursor.execute("""
+        UPDATE countries SET owner_id = ?, chat_id = ?
+        WHERE name = ?
+    """, (target_id, target_id, country_name))
+    conn.commit()
+    
+    log_action(message.from_user.id, 'give_country', country_name, str(target_id))
+    bot.reply_to(message, f"✅ کشور {country_name} به کاربر داده شد!")
+
+@bot.message_handler(commands=['freecountries'])
+def free_countries_admin(message):
+    """لیست کشورهای آزاد - /freecountries"""
+    if not is_admin(message.from_user.id):
+        bot.reply_to(message, "❌ شما ادمین نیستید!")
+        return
+    
+    countries = get_free_countries()
+    if not countries:
+        bot.reply_to(message, "📭 هیچ کشور آزادی وجود ندارد!")
+        return
+    
+    result = "📋 **کشورهای آزاد:**\n\n"
+    for c in countries[:20]:
+        vip = "⭐ VIP" if c[3] else ""
+        result += f"🏳️ {c[2]} {c[1]} {vip}\n"
+    
+    if len(countries) > 20:
+        result += f"\n... و {len(countries) - 20} کشور دیگر"
+    
+    bot.reply_to(message, result, parse_mode='Markdown')
+
+# =============================================
+# ۱۳. کامندهای مالک
+# =============================================
+
+@bot.message_handler(commands=['addadmin'])
+def add_admin_command(message):
+    """اضافه کردن ادمین - /addadmin 123456789"""
+    if not is_owner(message.from_user.id):
+        bot.reply_to(message, "❌ فقط مالک می‌تواند ادمین اضافه کند!")
+        return
+    
+    parts = message.text.split()
+    if len(parts) < 2:
+        bot.reply_to(message, "❌ استفاده: /addadmin 123456789")
+        return
+    
+    try:
+        target_id = int(parts[1])
+    except:
+        bot.reply_to(message, "❌ شناسه معتبر نیست!")
+        return
+    
+    if is_admin(target_id):
+        bot.reply_to(message, "❌ کاربر قبلاً ادمین است!")
+        return
+    
+    cursor.execute("INSERT INTO admins (user_id, added_by) VALUES (?, ?)", (target_id, message.from_user.id))
+    conn.commit()
+    
+    log_action(message.from_user.id, 'add_admin', str(target_id), '')
+    bot.reply_to(message, f"✅ کاربر با ID {target_id} ادمین شد!")
+
+@bot.message_handler(commands=['removeadmin'])
+def remove_admin_command(message):
+    """حذف ادمین - /removeadmin 123456789"""
+    if not is_owner(message.from_user.id):
+        bot.reply_to(message, "❌ فقط مالک می‌تواند ادمین حذف کند!")
+        return
+    
+    parts = message.text.split()
+    if len(parts) < 2:
+        bot.reply_to(message, "❌ استفاده: /removeadmin 123456789")
+        return
+    
+    try:
+        target_id = int(parts[1])
+    except:
+        bot.reply_to(message, "❌ شناسه معتبر نیست!")
+        return
+    
+    if target_id == ADMIN_ID:
+        bot.reply_to(message, "❌ نمی‌توانید خودتان را حذف کنید!")
+        return
+    
+    if not is_admin(target_id):
+        bot.reply_to(message, "❌ کاربر ادمین نیست!")
+        return
+    
+    cursor.execute("DELETE FROM admins WHERE user_id = ?", (target_id,))
+    conn.commit()
+    
+    log_action(message.from_user.id, 'remove_admin', str(target_id), '')
+    bot.reply_to(message, f"✅ کاربر با ID {target_id} از ادمین‌ها حذف شد!")
+
+@bot.message_handler(commands=['addresource'])
+def add_resource_command(message):
+    """اضافه کردن به منابع - /addresource CountryName resource amount"""
+    if not is_owner(message.from_user.id):
+        bot.reply_to(message, "❌ فقط مالک می‌تواند منابع را تغییر دهد!")
+        return
+    
+    parts = message.text.split()
+    if len(parts) < 4:
+        bot.reply_to(message, "❌ استفاده: /addresource Iran money 1000000")
+        return
+    
+    country_name = parts[1]
+    resource = parts[2]
+    try:
+        amount = int(parts[3])
+    except:
+        bot.reply_to(message, "❌ مقدار معتبر نیست!")
+        return
+    
+    allowed = ['money', 'oil', 'gold', 'iron', 'stones', 'wood', 'food', 'meat', 'clothes']
+    if resource not in allowed:
+        bot.reply_to(message, f"❌ منبع {resource} معتبر نیست!")
+        return
+    
+    cursor.execute(f"UPDATE countries SET {resource} = {resource} + ? WHERE name = ?", (amount, country_name))
+    conn.commit()
+    
+    log_action(message.from_user.id, 'add_resource', country_name, f'{resource}+{amount}')
+    bot.reply_to(message, f"✅ {amount:,} واحد به {resource} کشور {country_name} اضافه شد!")
+
+@bot.message_handler(commands=['removeresource'])
+def remove_resource_command(message):
+    """کم کردن از منابع - /removeresource CountryName resource amount"""
+    if not is_owner(message.from_user.id):
+        bot.reply_to(message, "❌ فقط مالک می‌تواند منابع را تغییر دهد!")
+        return
+    
+    parts = message.text.split()
+    if len(parts) < 4:
+        bot.reply_to(message, "❌ استفاده: /removeresource Iran money 100000")
+        return
+    
+    country_name = parts[1]
+    resource = parts[2]
+    try:
+        amount = int(parts[3])
+    except:
+        bot.reply_to(message, "❌ مقدار معتبر نیست!")
+        return
+    
+    allowed = ['money', 'oil', 'gold', 'iron', 'stones', 'wood', 'food', 'meat', 'clothes']
+    if resource not in allowed:
+        bot.reply_to(message, f"❌ منبع {resource} معتبر نیست!")
+        return
+    
+    cursor.execute(f"UPDATE countries SET {resource} = MAX(0, {resource} - ?) WHERE name = ?", (amount, country_name))
+    conn.commit()
+    
+    log_action(message.from_user.id, 'remove_resource', country_name, f'{resource}-{amount}')
+    bot.reply_to(message, f"✅ {amount:,} واحد از {resource} کشور {country_name} کم شد!")
+
+@bot.message_handler(commands=['deleteuser'])
+def delete_user_command(message):
+    """حذف کاربر - /deleteuser 123456789"""
+    if not is_owner(message.from_user.id):
+        bot.reply_to(message, "❌ فقط مالک می‌تواند کاربر را حذف کند!")
+        return
+    
+    parts = message.text.split()
+    if len(parts) < 2:
+        bot.reply_to(message, "❌ استفاده: /deleteuser 123456789")
+        return
+    
+    try:
+        target_id = int(parts[1])
+    except:
+        bot.reply_to(message, "❌ شناسه معتبر نیست!")
+        return
+    
+    # پاک کردن مالکیت کشور
+    cursor.execute("UPDATE countries SET owner_id = NULL, chat_id = NULL WHERE owner_id = ?", (target_id,))
+    cursor.execute("DELETE FROM admins WHERE user_id = ?", (target_id,))
+    conn.commit()
+    
+    log_action(message.from_user.id, 'delete_user', str(target_id), '')
+    bot.reply_to(message, f"✅ کاربر با ID {target_id} حذف شد!")
+
+@bot.message_handler(commands=['resetcountry'])
+def reset_country_command(message):
+    """ریست کردن کشور - /resetcountry Iran"""
+    if not is_owner(message.from_user.id):
+        bot.reply_to(message, "❌ فقط مالک می‌تواند کشور را ریست کند!")
+        return
+    
+    parts = message.text.split()
+    if len(parts) < 2:
+        bot.reply_to(message, "❌ استفاده: /resetcountry Iran")
+        return
+    
+    country_name = parts[1]
+    country = get_country_by_name(country_name)
+    if not country:
+        bot.reply_to(message, f"❌ کشور {country_name} وجود ندارد!")
+        return
+    
+    # تنظیم مجدد کشور
+    if country[3]:  # VIP
+        money, oil = 10000000, 1000
+    else:
+        money, oil = 1000000, 100
+    
+    cursor.execute("""
+        UPDATE countries 
+        SET owner_id = NULL, chat_id = NULL,
+            money = ?, oil = ?,
+            population = 1000000, happiness = 70, military_readiness = 50
+        WHERE name = ?
+    """, (money, oil, country_name))
+    conn.commit()
+    
+    log_action(message.from_user.id, 'reset_country', country_name, '')
+    bot.reply_to(message, f"✅ کشور {country_name} ریست شد و آماده واگذاری مجدد است!")
+
+@bot.message_handler(commands=['setvip'])
+def set_vip_command(message):
+    """تغییر وضعیت VIP - /setvip Iran true/false"""
+    if not is_owner(message.from_user.id):
+        bot.reply_to(message, "❌ فقط مالک می‌تواند وضعیت VIP را تغییر دهد!")
+        return
+    
+    parts = message.text.split()
+    if len(parts) < 3:
+        bot.reply_to(message, "❌ استفاده: /setvip Iran true")
+        return
+    
+    country_name = parts[1]
+    is_vip = parts[2].lower() == 'true'
+    
+    country = get_country_by_name(country_name)
+    if not country:
+        bot.reply_to(message, f"❌ کشور {country_name} وجود ندارد!")
+        return
+    
+    cursor.execute("UPDATE countries SET is_vip = ? WHERE name = ?", (1 if is_vip else 0, country_name))
+    conn.commit()
+    
+    log_action(message.from_user.id, 'set_vip', country_name, str(is_vip))
+    status = "VIP" if is_vip else "عادی"
+    bot.reply_to(message, f"✅ کشور {country_name} به حالت {status} تغییر یافت!")
+
+# =============================================
+# ۱۵. سیستم جنگ
+# =============================================
+
+@bot.message_handler(commands=['declarewar'])
+def declare_war_command(message):
+    """اعلام جنگ - /declarewar CountryName"""
+    user_id = message.from_user.id
+    attacker = get_country_by_user(user_id)
+    
+    if not attacker:
+        bot.reply_to(message, "❌ شما هیچ کشوری ندارید!")
+        return
+    
+    parts = message.text.split()
+    if len(parts) < 2:
+        bot.reply_to(message, "❌ استفاده: /declarewar Iran")
+        return
+    
+    defender_name = parts[1]
+    defender = get_country_by_name(defender_name)
+    
+    if not defender:
+        bot.reply_to(message, f"❌ کشور {defender_name} وجود ندارد!")
+        return
+    
+    if attacker[0] == defender[0]:
+        bot.reply_to(message, "❌ نمی‌توانید به خودتان حمله کنید!")
+        return
+    
+    if not defender[9]:  # owner_id
+        bot.reply_to(message, "❌ این کشور بازیکن ندارد!")
+        return
+    
+    # بررسی جنگ فعال
+    cursor.execute("""
+        SELECT * FROM wars 
+        WHERE (attacker_id = ? AND defender_id = ? OR attacker_id = ? AND defender_id = ?)
+        AND status IN ('declared', 'active')
+    """, (attacker[0], defender[0], defender[0], attacker[0]))
+    
+    existing = cursor.fetchone()
+    if existing:
+        bot.reply_to(message, "❌ قبلاً جنگی بین این کشورها وجود دارد!")
+        return
+    
+    # اعلام جنگ
+    cursor.execute("""
+        INSERT INTO wars (attacker_id, defender_id, status, declared_at)
+        VALUES (?, ?, 'declared', ?)
+    """, (attacker[0], defender[0], datetime.now().isoformat()))
+    conn.commit()
+    
+    war_id = cursor.lastrowid
+    log_action(user_id, 'declare_war', defender_name, f'war_id={war_id}')
+    
+    # اطلاع به کانال
+    bot.send_message(CHANNEL_ID, 
+        f"⚔️ **اعلام جنگ!**\n"
+        f"{attacker[2]} {attacker[1]} به {defender[2]} {defender[1]} اعلام جنگ کرد!\n"
+        f"🕐 زمان: {datetime.now().strftime('%Y-%m-%d %H:%M')}"
+    )
+    
+    bot.reply_to(message, f"⚔️ جنگ بین {attacker[1]} و {defender[1]} اعلام شد!")
+
+@bot.message_handler(commands=['attack'])
+def attack_command(message):
+    """حمله به کشور - /attack CountryName [ground/air/sea/missile/drone]"""
+    user_id = message.from_user.id
+    attacker = get_country_by_user(user_id)
+    
+    if not attacker:
+        bot.reply_to(message, "❌ شما هیچ کشوری ندارید!")
+        return
+    
+    parts = message.text.split()
+    if len(parts) < 3:
+        bot.reply_to(message, "❌ استفاده: /attack Iran ground")
+        return
+    
+    defender_name = parts[1]
+    attack_type = parts[2].lower()
+    
+    defender = get_country_by_name(defender_name)
+    if not defender:
+        bot.reply_to(message, f"❌ کشور {defender_name} وجود ندارد!")
+        return
+    
+    # بررسی جنگ فعال
+    cursor.execute("""
+        SELECT * FROM wars 
+        WHERE (attacker_id = ? AND defender_id = ? OR attacker_id = ? AND defender_id = ?)
+        AND status IN ('declared', 'active')
+    """, (attacker[0], defender[0], defender[0], attacker[0]))
+    
+    war = cursor.fetchone()
+    if not war:
+        bot.reply_to(message, "❌ ابتدا باید با /declarewar اعلام جنگ کنید!")
+        return
+    
+    # محاسبه قدرت حمله
+    attack_power = calculate_attack_power(attacker[0], attack_type)
+    defense_power = calculate_defense_power(defender[0], attack_type)
+    
+    if attack_power == 0:
+        bot.reply_to(message, f"❌ شما هیچ نیروی {attack_type} برای حمله ندارید!")
+        return
+    
+    # محاسبه نتیجه
+    damage, casualties, success = calculate_battle(attack_power, defense_power)
+    
+    # اعمال خسارت
+    if success:
+        # کاهش منابع دشمن
+        cursor.execute("""
+            UPDATE countries 
+            SET money = MAX(0, money - ?),
+                oil = MAX(0, oil - ?),
+                happiness = MAX(0, happiness - ?),
+                military_readiness = MAX(0, military_readiness - ?)
+            WHERE id = ?
+        """, (damage * 1000, damage // 2, damage // 10, damage // 20, defender[0]))
+        conn.commit()
+    
+    # ثبت نتیجه
+    cursor.execute("""
+        UPDATE wars 
+        SET aggressor_casualties = aggressor_casualties + ?,
+            defender_casualties = defender_casualties + ?,
+            aggressor_damage = aggressor_damage + ?,
+            defender_damage = defender_damage + ?
+        WHERE id = ?
+    """, (casualties, casualties // 2, damage if success else 0, damage if success else 0, war[0]))
+    conn.commit()
+    
+    log_action(user_id, 'attack', defender_name, f'type={attack_type}, damage={damage}')
+    
+    # گزارش نتیجه
+    result = f"⚔️ **نتیجه حمله {attack_type}**\n"
+    result += f"🎯 از: {attacker[2]} {attacker[1]}\n"
+    result += f"🎯 به: {defender[2]} {defender[1]}\n"
+    result += f"✅ موفقیت: {'✅ بله' if success else '❌ خیر'}\n"
+    result += f"💥 خسارت: {damage}\n"
+    result += f"💀 تلفات مهاجم: {casualties}\n"
+    result += f"💀 تلفات مدافع: {casualties // 2}\n"
+    
+    bot.reply_to(message, result)
+
+def calculate_attack_power(country_id: int, attack_type: str) -> int:
+    """محاسبه قدرت حمله بر اساس نوع"""
+    power = 0
+    
+    if attack_type == 'ground':
+        units = get_military_units(country_id)
+        ground_types = ['infantry', 'special_forces', 'm1_abrams', 'leopard_2a7', 't_90m', 
+                       'challenger_3', 'leclerc', 'k2_black_panther', 'merkava_mk4', 'type_99a']
+        for u in units:
+            if u[2] in ground_types:
+                power += u[5] * u[3]  # power * count
+    
+    elif attack_type == 'air':
+        units = get_military_units(country_id)
+        air_types = ['f_22_raptor', 'f_35_lightning', 'f_16', 'f_15', 'f_18', 
+                    'rafale', 'eurofighter', 'su_35', 'su_57', 'j_20',
+                    'b_1b', 'b_2', 'b_52', 'tu_160', 'h_6k']
+        for u in units:
+            if u[2] in air_types:
+                power += u[5] * u[3]
+    
+    elif attack_type == 'missile':
+        missiles = get_missiles(country_id)
+        for m in missiles:
+            power += m[5] * m[3]  # power * count
+    
+    elif attack_type == 'drone':
+        drones = get_drones(country_id)
+        for d in drones:
+            power += d[5] * d[3]  # power * count
+    
+    # اعمال ضریب قیمت
+    multiplier = get_price_multiplier(get_country_by_id(country_id)[9])
+    power = int(power / multiplier)
+    
+    return power
+
+def calculate_defense_power(country_id: int, attack_type: str) -> int:
+    """محاسبه قدرت دفاع بر اساس نوع حمله"""
+    power = 0
+    
+    # پدافندهای مستقر در شهرها
+    cities = get_cities(country_id)
+    for city in cities:
+        deployed = json.loads(city[12] or '[]')
+        for defense_id in deployed:
+            cursor.execute("SELECT * FROM defenses WHERE id = ?", (defense_id,))
+            defense = cursor.fetchone()
+            if defense:
+                power += defense[5] * 10  # intercept_chance * 10
+    
+    # دفاع طبیعی کشور
+    country = get_country_by_id(country_id)
+    power += country[20] * 10  # military_readiness
+    
+    return power
+
+def calculate_battle(attack_power: int, defense_power: int) -> tuple:
+    """محاسبه نتیجه نبرد"""
+    total_power = attack_power + defense_power
+    if total_power == 0:
+        return 0, 0, False
+    
+    # شانس موفقیت
+    success_chance = (attack_power / total_power) * 100
+    success = random.random() * 100 < success_chance
+    
+    if success:
+        damage = int(attack_power / 100) + random.randint(1, 10)
+        casualties = int(attack_power / 50) + random.randint(1, 5)
+    else:
+        damage = int(defense_power / 200) + random.randint(0, 5)
+        casualties = int(attack_power / 30) + random.randint(1, 10)
+    
+    return damage, casualties, success
+
+# =============================================
+# ۱۶. سیستم دیپلماسی
+# =============================================
+
+@bot.message_handler(commands=['alliance'])
+def alliance_command(message):
+    """ایجاد اتحاد - /alliance Name @member1 @member2"""
+    if not is_admin(message.from_user.id):
+        bot.reply_to(message, "❌ فقط ادمین می‌تواند اتحاد ایجاد کند!")
+        return
+    
+    parts = message.text.split()
+    if len(parts) < 3:
+        bot.reply_to(message, "❌ استفاده: /alliance Name @member1 @member2")
+        return
+    
+    name = parts[1]
+    members = []
+    
+    for part in parts[2:]:
+        if part.startswith('@'):
+            try:
+                user = bot.get_chat(part)
+                country = get_country_by_user(user.id)
+                if country:
+                    members.append(country[0])
+            except:
+                pass
+    
+    if len(members) < 2:
+        bot.reply_to(message, "❌ حداقل ۲ عضو برای اتحاد نیاز است!")
+        return
+    
+    cursor.execute("""
+        INSERT INTO alliances (name, leader_id, members)
+        VALUES (?, ?, ?)
+    """, (name, members[0], json.dumps(members)))
+    conn.commit()
+    
+    log_action(message.from_user.id, 'create_alliance', name, f'{len(members)} members')
+    bot.reply_to(message, f"✅ اتحاد {name} با {len(members)} عضو ایجاد شد!")
+
+@bot.message_handler(commands=['treaty'])
+def treaty_command(message):
+    """ایجاد پیمان - /treaty non_aggression @country1 @country2"""
+    if not is_admin(message.from_user.id):
+        bot.reply_to(message, "❌ فقط ادمین می‌تواند پیمان ایجاد کند!")
+        return
+    
+    parts = message.text.split()
+    if len(parts) < 4:
+        bot.reply_to(message, "❌ استفاده: /treaty non_aggression @country1 @country2")
+        return
+    
+    treaty_type = parts[1]
+    
+    # پیدا کردن کشورها
+    countries = []
+    for part in parts[2:4]:
+        if part.startswith('@'):
+            try:
+                user = bot.get_chat(part)
+                country = get_country_by_user(user.id)
+                if country:
+                    countries.append(country[0])
+            except:
+                pass
+    
+    if len(countries) < 2:
+        bot.reply_to(message, "❌ دو کشور معتبر پیدا نشد!")
+        return
+    
+    cursor.execute("""
+        INSERT INTO treaties (type, country1_id, country2_id, duration_days, expires_at)
+        VALUES (?, ?, ?, 30, datetime('now', '+30 days'))
+    """, (treaty_type, countries[0], countries[1]))
+    conn.commit()
+    
+    log_action(message.from_user.id, 'create_treaty', treaty_type, f'{countries[0]}-{countries[1]}')
+    bot.reply_to(message, f"✅ پیمان {treaty_type} بین دو کشور ایجاد شد!")
+
+@bot.message_handler(commands=['ceasefire'])
+def ceasefire_command(message):
+    """آتش‌بس - /ceasefire CountryName"""
+    user_id = message.from_user.id
+    country = get_country_by_user(user_id)
+    
+    if not country:
+        bot.reply_to(message, "❌ شما هیچ کشوری ندارید!")
+        return
+    
+    parts = message.text.split()
+    if len(parts) < 2:
+        bot.reply_to(message, "❌ استفاده: /ceasefire Iran")
+        return
+    
+    target_name = parts[1]
+    target = get_country_by_name(target_name)
+    
+    if not target:
+        bot.reply_to(message, f"❌ کشور {target_name} وجود ندارد!")
+        return
+    
+    # پیدا کردن جنگ فعال
+    cursor.execute("""
+        SELECT * FROM wars 
+        WHERE (attacker_id = ? AND defender_id = ? OR attacker_id = ? AND defender_id = ?)
+        AND status IN ('declared', 'active')
+    """, (country[0], target[0], target[0], country[0]))
+    
+    war = cursor.fetchone()
+    if not war:
+        bot.reply_to(message, "❌ جنگی بین این کشورها وجود ندارد!")
+        return
+    
+    # درخواست آتش‌بس
+    markup = types.InlineKeyboardMarkup()
+    markup.add(
+        types.InlineKeyboardButton("✅ پذیرش", callback_data=f"ceasefire_accept_{war[0]}"),
+        types.InlineKeyboardButton("❌ رد", callback_data=f"ceasefire_reject_{war[0]}")
+    )
+    
+    bot.send_message(target[9], 
+        f"🤝 درخواست آتش‌بس از {country[2]} {country[1]}",
+        reply_markup=markup
+    )
+    
+    bot.reply_to(message, "📨 درخواست آتش‌بس ارسال شد!")
+
+# =============================================
+# ۱۷. سیستم کانال سوئز
+# =============================================
+
+@bot.message_handler(commands=['suez'])
+def suez_command(message):
+    """مدیریت کانال سوئز - /suez [status/open/close]"""
+    user_id = message.from_user.id
+    country = get_country_by_user(user_id)
+    
+    if not country:
+        bot.reply_to(message, "❌ شما هیچ کشوری ندارید!")
+        return
+    
+    # فقط مصر می‌تواند کانال سوئز را مدیریت کند
+    if country[1] != 'Egypt':
+        bot.reply_to(message, "❌ فقط مصر می‌تواند کانال سوئز را مدیریت کند!")
+        return
+    
+    parts = message.text.split()
+    if len(parts) < 2:
+        # نمایش وضعیت
+        cursor.execute("SELECT is_open, daily_revenue, toll_per_pass FROM suez_canal LIMIT 1")
+        suez = cursor.fetchone()
+        
+        if suez:
+            status = "🔓 باز" if suez[0] else "🔒 بسته"
+            bot.reply_to(message, 
+                f"🌊 **کانال سوئز**\n"
+                f"وضعیت: {status}\n"
+                f"💰 درآمد روزانه: {suez[1]:,}\n"
+                f"🪙 عوارض هر عبور: {suez[2]:,}"
+            )
+        return
+    
+    action = parts[1].lower()
+    
+    if action == 'open':
+        cursor.execute("UPDATE suez_canal SET is_open = 1, last_updated = ?", (datetime.now().isoformat(),))
+        conn.commit()
+        bot.reply_to(message, "🔓 کانال سوئز باز شد!")
+        
+        # اطلاع به کانال
+        bot.send_message(CHANNEL_ID, "🌊 کانال سوئز **باز** شد! تجارت جهانی روان است.")
+        
+    elif action == 'close':
+        cursor.execute("UPDATE suez_canal SET is_open = 0, last_updated = ?", (datetime.now().isoformat(),))
+        conn.commit()
+        bot.reply_to(message, "🔒 کانال سوئز بسته شد!")
+        
+        # اطلاع به کانال
+        bot.send_message(CHANNEL_ID, "🌊 کانال سوئز **بسته** شد! تجارت جهانی مختل شده است.")
+    
+    else:
+        bot.reply_to(message, "❌ استفاده: /suez [status/open/close]")
+
+# =============================================
+# ۱۸. سیستم اطلاعاتی
+# =============================================
+
+@bot.message_handler(commands=['spy'])
+def spy_command(message):
+    """جاسوسی - /spy CountryName [army/economy/cities]"""
+    user_id = message.from_user.id
+    country = get_country_by_user(user_id)
+    
+    if not country:
+        bot.reply_to(message, "❌ شما هیچ کشوری ندارید!")
+        return
+    
+    parts = message.text.split()
+    if len(parts) < 3:
+        bot.reply_to(message, "❌ استفاده: /spy Iran army")
+        return
+    
+    target_name = parts[1]
+    target = get_country_by_name(target_name)
+    
+    if not target:
+        bot.reply_to(message, f"❌ کشور {target_name} وجود ندارد!")
+        return
+    
+    spy_type = parts[2].lower()
+    cost = 100000
+    
+    if country[10] < cost:
+        bot.reply_to(message, f"❌ پول کافی نیست! نیاز به {cost:,} پول")
+        return
+    
+    # کسر هزینه
+    cursor.execute("UPDATE countries SET money = money - ? WHERE id = ?", (cost, country[0]))
+    conn.commit()
+    
+    # شانس موفقیت
+    success_chance = 60 + random.randint(0, 30)
+    success = random.random() * 100 < success_chance
+    
+    result = f"🕵️ **عملیات جاسوسی**\n"
+    result += f"🎯 از: {country[2]} {country[1]}\n"
+    result += f"🎯 به: {target[2]} {target[1]}\n"
+    result += f"📋 نوع: {spy_type}\n"
+    result += f"✅ موفقیت: {'✅ بله' if success else '❌ خیر'}\n\n"
+    
+    if success and spy_type == 'army':
+        units = get_military_units(target[0])
+        result += "**⚔️ اطلاعات ارتش:**\n"
+        for u in units:
+            result += f"• {u[4]}: {u[3]} عدد (قدرت {u[5]})\n"
+        
+        missiles = get_missiles(target[0])
+        if missiles:
+            result += "\n**🚀 اطلاعات موشکی:**\n"
+            for m in missiles:
+                result += f"• {m[4]}: {m[3]} عدد (قدرت {m[5]})\n"
+    
+    elif success and spy_type == 'economy':
+        result += f"**💰 اطلاعات اقتصادی:**\n"
+        result += f"پول: {target[10]:,}\n"
+        result += f"نفت: {target[11]}\n"
+        result += f"طلا: {target[12]}\n"
+        result += f"جمعیت: {target[18]:,}\n"
+        result += f"رضایت: {target[19]}%\n"
+        result += f"درآمد هر نوبت: {calculate_income(target[0]):,}"
+    
+    elif success and spy_type == 'cities':
+        cities = get_cities(target[0])
+        result += f"**🏙️ اطلاعات شهرها ({len(cities)} شهر):**\n"
+        for city in cities:
+            result += f"• {city[2]}: جمعیت {city[3]:,}\n"
+    
+    # ثبت عملیات
+    cursor.execute("""
+        INSERT INTO intelligence_ops (source_id, target_id, op_type, status, result)
+        VALUES (?, ?, ?, ?, ?)
+    """, (country[0], target[0], spy_type, 'completed' if success else 'failed', result))
+    conn.commit()
+    
+    bot.reply_to(message, result)
+
+# =============================================
+# ۱۹. سیستم خرید
+# =============================================
+
+@bot.message_handler(commands=['buy'])
+def buy_command(message):
+    """خرید واحد - /buy unit_type count"""
+    user_id = message.from_user.id
+    country = get_country_by_user(user_id)
+    
+    if not country:
+        bot.reply_to(message, "❌ شما هیچ کشوری ندارید!")
+        return
+    
+    parts = message.text.split()
+    if len(parts) < 3:
+        bot.reply_to(message, "❌ استفاده: /buy infantry 100")
+        return
+    
+    unit_type = parts[1]
+    try:
+        count = int(parts[2])
+    except:
+        bot.reply_to(message, "❌ تعداد معتبر نیست!")
+        return
+    
+    # بررسی وجود واحد در دیتا
+    if unit_type in UNITS_DATA:
+        data = UNITS_DATA[unit_type]
+        unit_name = data['name']
+        power = data['power']
+        cost_money = data['cost_money'] * count
+        cost_oil = data['cost_oil'] * count
+        build_time = data['build_time']
+    else:
+        bot.reply_to(message, f"❌ نوع {unit_type} وجود ندارد!")
+        return
+    
+    # بررسی منابع
+    if country[10] < cost_money:
+        bot.reply_to(message, f"❌ پول کافی نیست! نیاز به {cost_money:,} پول")
+        return
+    
+    if country[11] < cost_oil:
+        bot.reply_to(message, f"❌ نفت کافی نیست! نیاز به {cost_oil} نفت")
+        return
+    
+    # کسر منابع
+    cursor.execute("""
+        UPDATE countries 
+        SET money = money - ?, oil = oil - ?
+        WHERE id = ?
+    """, (cost_money, cost_oil, country[0]))
+    conn.commit()
+    
+    # بررسی وجود واحد از قبل
+    cursor.execute("""
+        SELECT * FROM military_units 
+        WHERE country_id = ? AND unit_type = ?
+    """, (country[0], unit_type))
+    
+    existing = cursor.fetchone()
+    
+    if existing:
+        # افزایش تعداد
+        cursor.execute("""
+            UPDATE military_units 
+            SET count = count + ?, is_ready = 0
+            WHERE id = ?
+        """, (count, existing[0]))
+    else:
+        # ایجاد واحد جدید
+        cursor.execute("""
+            INSERT INTO military_units (country_id, unit_type, count, name, power, 
+                                       cost_money, cost_oil, build_time_minutes)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        """, (country[0], unit_type, count, unit_name, power, 
+              data['cost_money'], data['cost_oil'], build_time))
+    
+    conn.commit()
+    
+    log_action(user_id, 'buy_unit', unit_type, f'count={count}')
+    
+    bot.reply_to(message, 
+        f"✅ **خرید موفق!**\n"
+        f"🪖 {unit_name}: {count} عدد\n"
+        f"💰 هزینه: {cost_money:,} پول\n"
+        f"🛢️ هزینه نفت: {cost_oil}\n"
+        f"⏱ زمان ساخت: {build_time} دقیقه\n"
+        f"⚔️ قدرت کل: {power * count}"
+    )
+
+@bot.message_handler(commands=['buymissile'])
+def buy_missile_command(message):
+    """خرید موشک - /buymissile missile_type count"""
+    user_id = message.from_user.id
+    country = get_country_by_user(user_id)
+    
+    if not country:
+        bot.reply_to(message, "❌ شما هیچ کشوری ندارید!")
+        return
+    
+    parts = message.text.split()
+    if len(parts) < 3:
+        bot.reply_to(message, "❌ استفاده: /buymissile tomahawk 10")
+        return
+    
+    missile_type = parts[1]
+    try:
+        count = int(parts[2])
+    except:
+        bot.reply_to(message, "❌ تعداد معتبر نیست!")
+        return
+    
+    if missile_type in MISSILES_DATA:
+        data = MISSILES_DATA[missile_type]
+    else:
+        bot.reply_to(message, f"❌ نوع {missile_type} وجود ندارد!")
+        return
+    
+    cost_money = data['cost_money'] * count
+    cost_oil = data['cost_oil'] * count
+    
+    if country[10] < cost_money:
+        bot.reply_to(message, f"❌ پول کافی نیست! نیاز به {cost_money:,} پول")
+        return
+    
+    if country[11] < cost_oil:
+        bot.reply_to(message, f"❌ نفت کافی نیست! نیاز به {cost_oil} نفت")
+        return
+    
+    cursor.execute("""
+        UPDATE countries SET money = money - ?, oil = oil - ? WHERE id = ?
+    """, (cost_money, cost_oil, country[0]))
+    conn.commit()
+    
+    cursor.execute("""
+        SELECT * FROM missiles WHERE country_id = ? AND missile_type = ?
+    """, (country[0], missile_type))
+    existing = cursor.fetchone()
+    
+    if existing:
+        cursor.execute("""
+            UPDATE missiles SET count = count + ?, is_ready = 0 WHERE id = ?
+        """, (count, existing[0]))
+    else:
+        cursor.execute("""
+            INSERT INTO missiles (country_id, missile_type, count, name, power, 
+                                 range_km, cost_money, cost_oil, build_time_minutes, is_nuclear)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (country[0], missile_type, count, data['name'], data['power'],
+              data['range'], cost_money // count, cost_oil // count,
+              data['build_time'], 1 if data.get('nuclear', False) else 0))
+    
+    conn.commit()
+    
+    log_action(user_id, 'buy_missile', missile_type, f'count={count}')
+    
+    bot.reply_to(message, 
+        f"✅ **خرید موشک موفق!**\n"
+        f"🚀 {data['name']}: {count} عدد\n"
+        f"💰 هزینه: {cost_money:,} پول\n"
+        f"🛢️ هزینه نفت: {cost_oil}\n"
+        f"💥 قدرت تخریب: {data['power'] * count}\n"
+        f"📡 برد: {data['range']} کیلومتر"
+    )
+
+@bot.message_handler(commands=['buydefense'])
+def buy_defense_command(message):
+    """خرید پدافند - /buydefense defense_type count"""
+    user_id = message.from_user.id
+    country = get_country_by_user(user_id)
+    
+    if not country:
+        bot.reply_to(message, "❌ شما هیچ کشوری ندارید!")
+        return
+    
+    parts = message.text.split()
+    if len(parts) < 3:
+        bot.reply_to(message, "❌ استفاده: /buydefense patriot 5")
+        return
+    
+    defense_type = parts[1]
+    try:
+        count = int(parts[2])
+    except:
+        bot.reply_to(message, "❌ تعداد معتبر نیست!")
+        return
+    
+    if defense_type in DEFENSES_DATA:
+        data = DEFENSES_DATA[defense_type]
+    else:
+        bot.reply_to(message, f"❌ نوع {defense_type} وجود ندارد!")
+        return
+    
+    cost_money = data['cost_money'] * count
+    cost_oil = data['cost_oil'] * count
+    
+    if country[10] < cost_money:
+        bot.reply_to(message, f"❌ پول کافی نیست! نیاز به {cost_money:,} پول")
+        return
+    
+    if country[11] < cost_oil:
+        bot.reply_to(message, f"❌ نفت کافی نیست! نیاز به {cost_oil} نفت")
+        return
+    
+    cursor.execute("""
+        UPDATE countries SET money = money - ?, oil = oil - ? WHERE id = ?
+    """, (cost_money, cost_oil, country[0]))
+    conn.commit()
+    
+    cursor.execute("""
+        SELECT * FROM defenses WHERE country_id = ? AND defense_type = ?
+    """, (country[0], defense_type))
+    existing = cursor.fetchone()
+    
+    if existing:
+        cursor.execute("""
+            UPDATE defenses SET count = count + ?, is_ready = 0 WHERE id = ?
+        """, (count, existing[0]))
+    else:
+        cursor.execute("""
+            INSERT INTO defenses (country_id, defense_type, count, name, intercept_chance,
+                                 cost_money, cost_oil, build_time_minutes)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        """, (country[0], defense_type, count, data['name'], data['intercept_chance'],
+              data['cost_money'], data['cost_oil'], data['build_time']))
+    
+    conn.commit()
+    
+    log_action(user_id, 'buy_defense', defense_type, f'count={count}')
+    
+    bot.reply_to(message, 
+        f"✅ **خرید پدافند موفق!**\n"
+        f"🛡️ {data['name']}: {count} عدد\n"
+        f"💰 هزینه: {cost_money:,} پول\n"
+        f"🛢️ هزینه نفت: {cost_oil}\n"
+        f"🎯 شانس رهگیری: {data['intercept_chance']}%"
+    )
+
+# =============================================
+# ۲۰. آمار و گزارشات
+# =============================================
+
+@bot.message_handler(commands=['stats'])
+def stats_command(message):
+    """آمار جهانی - /stats"""
+    countries = get_all_countries()
+    
+    total_money = sum(c[10] for c in countries)
+    total_oil = sum(c[11] for c in countries)
+    total_population = sum(c[18] for c in countries)
+    total_power = 0
+    
+    for c in countries:
+        units = get_military_units(c[0])
+        total_power += sum(u[5] * u[3] for u in units)
+    
+    # کشورهای دارای جنگ فعال
+    cursor.execute("SELECT COUNT(*) FROM wars WHERE status IN ('declared', 'active')")
+    active_wars = cursor.fetchone()[0]
+    
+    stats = f"📊 **آمار جهانی**\n\n"
+    stats += f"🌍 تعداد کشورها: {len(countries)}\n"
+    stats += f"💰 کل پول: {total_money:,}\n"
+    stats += f"🛢️ کل نفت: {total_oil:,}\n"
+    stats += f"👥 کل جمعیت: {total_population:,}\n"
+    stats += f"⚔️ قدرت کل نظامی: {total_power:,}\n"
+    stats += f"⚔️ جنگ‌های فعال: {active_wars}\n"
+    
+    # ۱۰ کشور برتر از نظر قدرت
+    power_ranking = []
+    for c in countries:
+        units = get_military_units(c[0])
+        power = sum(u[5] * u[3] for u in units)
+        power_ranking.append((c[1], c[2], power))
+    
+    power_ranking.sort(key=lambda x: x[2], reverse=True)
+    
+    stats += "\n🏆 **۱۰ کشور برتر از نظر قدرت:**\n"
+    for i, (name, flag, power) in enumerate(power_ranking[:10], 1):
+        stats += f"{i}. {flag} {name}: {power:,}\n"
+    
+    bot.reply_to(message, stats, parse_mode='Markdown')
+
+# =============================================
+# ۲۱. شروع تردهای پس‌زمینه
+# =============================================
+
+def suez_income_thread():
+    """درآمد روزانه کانال سوئز"""
+    while True:
+        try:
+            cursor.execute("SELECT is_open, daily_revenue FROM suez_canal LIMIT 1")
+            suez = cursor.fetchone()
+            
+            if suez and suez[0]:  # باز است
+                revenue = suez[1] or 1000000
+                
+                # اضافه کردن به مصر
+                cursor.execute("""
+                    UPDATE countries 
+                    SET money = money + ? 
+                    WHERE name = 'Egypt'
+                """, (revenue,))
+                conn.commit()
+                
+                print(f"💰 درآمد کانال سوئز: +{revenue}")
+        
+        except Exception as e:
+            print(f"❌ خطا در درآمد کانال سوئز: {e}")
+        
+        time.sleep(86400)  # هر ۲۴ ساعت
+
+def start_suez_thread():
+    """شروع ترد درآمد کانال سوئز"""
+    thread = threading.Thread(target=suez_income_thread, daemon=True)
+    thread.start()
+    print("✅ ترد درآمد کانال سوئز شروع شد")
+
+# =============================================
+# ۲۲. اجرا
+# =============================================
+
+if __name__ == "__main__":
+    print("=" * 60)
+    print("🌍 WAR BOT - Telegram World War Strategy Game")
+    print("=" * 60)
+    print(f"👑 مالک: {ADMIN_ID}")
+    print(f"🌍 تعداد کشورها: {len(get_all_countries())}")
+    print(f"⭐ VIP: {len([c for c in get_all_countries() if c[3]])}")
+    print("=" * 60)
+    
+# =============================================
+# ۲۳. سیستم خرید پهپاد
+# =============================================
+
+@bot.message_handler(commands=['buydrone'])
+def buy_drone_command(message):
+    """خرید پهپاد - /buydrone drone_type count"""
+    user_id = message.from_user.id
+    country = get_country_by_user(user_id)
+    
+    if not country:
+        bot.reply_to(message, "❌ شما هیچ کشوری ندارید!")
+        return
+    
+    parts = message.text.split()
+    if len(parts) < 3:
+        bot.reply_to(message, "❌ استفاده: /buydrone shahed_136 10")
+        return
+    
+    drone_type = parts[1]
+    try:
+        count = int(parts[2])
+    except:
+        bot.reply_to(message, "❌ تعداد معتبر نیست!")
+        return
+    
+    if drone_type in DRONES_DATA:
+        data = DRONES_DATA[drone_type]
+    else:
+        bot.reply_to(message, f"❌ نوع {drone_type} وجود ندارد!")
+        return
+    
+    cost_money = data['cost_money'] * count
+    cost_oil = data['cost_oil'] * count
+    
+    if country[10] < cost_money:
+        bot.reply_to(message, f"❌ پول کافی نیست! نیاز به {cost_money:,} پول")
+        return
+    
+    if country[11] < cost_oil:
+        bot.reply_to(message, f"❌ نفت کافی نیست! نیاز به {cost_oil} نفت")
+        return
+    
+    cursor.execute("""
+        UPDATE countries SET money = money - ?, oil = oil - ? WHERE id = ?
+    """, (cost_money, cost_oil, country[0]))
+    conn.commit()
+    
+    cursor.execute("""
+        SELECT * FROM drones WHERE country_id = ? AND drone_type = ?
+    """, (country[0], drone_type))
+    existing = cursor.fetchone()
+    
+    if existing:
+        cursor.execute("""
+            UPDATE drones SET count = count + ?, is_ready = 0 WHERE id = ?
+        """, (count, existing[0]))
+    else:
+        cursor.execute("""
+            INSERT INTO drones (country_id, drone_type, count, name, power, 
+                               range_km, cost_money, cost_oil, build_time_minutes)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (country[0], drone_type, count, data['name'], data['power'],
+              data['range'], data['cost_money'], data['cost_oil'], data['build_time']))
+    
+    conn.commit()
+    
+    log_action(user_id, 'buy_drone', drone_type, f'count={count}')
+    
+    bot.reply_to(message, 
+        f"✅ **خرید پهپاد موفق!**\n"
+        f"🛸 {data['name']}: {count} عدد\n"
+        f"💰 هزینه: {cost_money:,} پول\n"
+        f"🛢️ هزینه نفت: {cost_oil}\n"
+        f"💥 قدرت: {data['power'] * count}\n"
+        f"📡 برد: {data['range']} کیلومتر"
+    )
+
+# =============================================
+# ۲۴. سیستم خرید سایبری
+# =============================================
+
+@bot.message_handler(commands=['buycyber'])
+def buy_cyber_command(message):
+    """خرید واحد سایبری - /buycyber level [beginner/intermediate/advanced/apt/elite]"""
+    user_id = message.from_user.id
+    country = get_country_by_user(user_id)
+    
+    if not country:
+        bot.reply_to(message, "❌ شما هیچ کشوری ندارید!")
+        return
+    
+    parts = message.text.split()
+    if len(parts) < 2:
+        bot.reply_to(message, "❌ استفاده: /buycyber advanced")
+        return
+    
+    level = parts[1]
+    
+    if level in CYBER_DATA:
+        data = CYBER_DATA[level]
+    else:
+        bot.reply_to(message, f"❌ سطح {level} وجود ندارد!")
+        return
+    
+    cost_money = data['cost_money']
+    cost_oil = data['cost_oil']
+    
+    if country[10] < cost_money:
+        bot.reply_to(message, f"❌ پول کافی نیست! نیاز به {cost_money:,} پول")
+        return
+    
+    if country[11] < cost_oil:
+        bot.reply_to(message, f"❌ نفت کافی نیست! نیاز به {cost_oil} نفت")
+        return
+    
+    cursor.execute("""
+        UPDATE countries SET money = money - ?, oil = oil - ? WHERE id = ?
+    """, (cost_money, cost_oil, country[0]))
+    conn.commit()
+    
+    cursor.execute("""
+        SELECT * FROM cyber_units WHERE country_id = ? AND cyber_level = ?
+    """, (country[0], level))
+    existing = cursor.fetchone()
+    
+    if existing:
+        cursor.execute("""
+            UPDATE cyber_units SET is_ready = 0 WHERE id = ?
+        """, (existing[0],))
+    else:
+        cursor.execute("""
+            INSERT INTO cyber_units (country_id, cyber_level, name, attack_power, 
+                                    defense_power, cost_money, cost_oil, build_time_minutes)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        """, (country[0], level, data['name'], data['attack'], data['defense'],
+              data['cost_money'], data['cost_oil'], data['build_time']))
+    
+    conn.commit()
+    
+    log_action(user_id, 'buy_cyber', level, '')
+    
+    bot.reply_to(message, 
+        f"✅ **خرید واحد سایبری موفق!**\n"
+        f"💻 {data['name']}: ۱ واحد\n"
+        f"💰 هزینه: {cost_money:,} پول\n"
+        f"🛢️ هزینه نفت: {cost_oil}\n"
+        f"⚔️ قدرت حمله: {data['attack']}\n"
+        f"🛡️ قدرت دفاع: {data['defense']}"
+    )
+
+# =============================================
+# ۲۵. سیستم حمله سایبری
+# =============================================
+
+@bot.message_handler(commands=['cyberattack'])
+def cyber_attack_command(message):
+    """حمله سایبری - /cyberattack CountryName"""
+    user_id = message.from_user.id
+    country = get_country_by_user(user_id)
+    
+    if not country:
+        bot.reply_to(message, "❌ شما هیچ کشوری ندارید!")
+        return
+    
+    parts = message.text.split()
+    if len(parts) < 2:
+        bot.reply_to(message, "❌ استفاده: /cyberattack Iran")
+        return
+    
+    target_name = parts[1]
+    target = get_country_by_name(target_name)
+    
+    if not target:
+        bot.reply_to(message, f"❌ کشور {target_name} وجود ندارد!")
+        return
+    
+    # دریافت واحد سایبری کشور
+    cyber_units = get_cyber_units(country[0])
+    if not cyber_units:
+        bot.reply_to(message, "❌ شما هیچ واحد سایبری ندارید! از /buycyber استفاده کنید.")
+        return
+    
+    # بهترین واحد را انتخاب کنید
+    best_unit = max(cyber_units, key=lambda x: x[5])  # attack_power
+    attack_power = best_unit[5]  # attack_power
+    
+    # دفاع سایبری هدف
+    target_cyber = get_cyber_units(target[0])
+    defense_power = 0
+    if target_cyber:
+        defense_power = max(target_cyber, key=lambda x: x[6])[6]  # defense_power
+    
+    # محاسبه نتیجه
+    success_chance = attack_power / (attack_power + defense_power + 1) * 100
+    success = random.random() * 100 < success_chance
+    
+    damage = 0
+    if success:
+        damage = random.randint(1, 20)
+        # اعمال خسارت سایبری
+        cursor.execute("""
+            UPDATE countries 
+            SET happiness = MAX(0, happiness - ?),
+                money = MAX(0, money - ?),
+                military_readiness = MAX(0, military_readiness - ?)
+            WHERE id = ?
+        """, (damage, damage * 10000, damage // 2, target[0]))
+        conn.commit()
+    
+    log_action(user_id, 'cyber_attack', target_name, f'success={success}, damage={damage}')
+    
+    result = f"💻 **حمله سایبری**\n"
+    result += f"🎯 از: {country[2]} {country[1]}\n"
+    result += f"🎯 به: {target[2]} {target[1]}\n"
+    result += f"⚔️ قدرت حمله: {attack_power}\n"
+    result += f"🛡️ قدرت دفاع: {defense_power}\n"
+    result += f"✅ موفقیت: {'✅ بله' if success else '❌ خیر'}\n"
+    if success:
+        result += f"💥 خسارت وارد شده: {damage}%\n"
+        result += f"💰 پول از دست رفته: {damage * 10000:,}\n"
+        result += f"😊 کاهش رضایت: {damage}%"
+    
+    bot.reply_to(message, result)
+
+# =============================================
+# ۲۶. سیستم استقرار نیرو در شهر
+# =============================================
+
+@bot.message_handler(commands=['deploy'])
+def deploy_command(message):
+    """استقرار نیرو در شهر - /deploy unit_type count city_name"""
+    user_id = message.from_user.id
+    country = get_country_by_user(user_id)
+    
+    if not country:
+        bot.reply_to(message, "❌ شما هیچ کشوری ندارید!")
+        return
+    
+    parts = message.text.split()
+    if len(parts) < 4:
+        bot.reply_to(message, "❌ استفاده: /deploy infantry 100 تهران")
+        return
+    
+    unit_type = parts[1]
+    try:
+        count = int(parts[2])
+    except:
+        bot.reply_to(message, "❌ تعداد معتبر نیست!")
+        return
+    
+    city_name = " ".join(parts[3:])
+    
+    # پیدا کردن شهر
+    cities = get_cities(country[0])
+    target_city = None
+    for city in cities:
+        if city[2] == city_name:
+            target_city = city
+            break
+    
+    if not target_city:
+        bot.reply_to(message, f"❌ شهر {city_name} یافت نشد!")
+        return
+    
+    # بررسی وجود واحد
+    cursor.execute("""
+        SELECT * FROM military_units 
+        WHERE country_id = ? AND unit_type = ?
+    """, (country[0], unit_type))
+    
+    unit = cursor.fetchone()
+    if not unit:
+        bot.reply_to(message, f"❌ شما {unit_type} ندارید!")
+        return
+    
+    if unit[3] < count:
+        bot.reply_to(message, f"❌ شما فقط {unit[3]} عدد {unit_type} دارید!")
+        return
+    
+    # کاهش از واحد اصلی
+    cursor.execute("""
+        UPDATE military_units SET count = count - ? WHERE id = ?
+    """, (count, unit[0]))
+    
+    # اضافه کردن به شهر
+    deployed = json.loads(target_city[13] or '{}')
+    deployed[unit_type] = deployed.get(unit_type, 0) + count
+    
+    cursor.execute("""
+        UPDATE cities SET deployed_units = ? WHERE id = ?
+    """, (json.dumps(deployed), target_city[0]))
+    conn.commit()
+    
+    log_action(user_id, 'deploy_units', f'{city_name}-{unit_type}', f'count={count}')
+    
+    bot.reply_to(message, 
+        f"✅ **استقرار نیرو موفق!**\n"
+        f"🪖 {unit[4]}: {count} عدد\n"
+        f"🏙️ مستقر در: {city_name}\n"
+        f"📊 باقی‌مانده: {unit[3] - count} عدد"
+    )
+
+# =============================================
+# ۲۷. سیستم تجارت
+# =============================================
+
+@bot.message_handler(commands=['trade'])
+def trade_command(message):
+    """درخواست تجارت - /trade @country goods amount"""
+    user_id = message.from_user.id
+    country = get_country_by_user(user_id)
+    
+    if not country:
+        bot.reply_to(message, "❌ شما هیچ کشوری ندارید!")
+        return
+    
+    parts = message.text.split()
+    if len(parts) < 4:
+        bot.reply_to(message, "❌ استفاده: /trade @country oil 100")
+        return
+    
+    target = parts[1]
+    goods = parts[2]
+    try:
+        amount = int(parts[3])
+    except:
+        bot.reply_to(message, "❌ مقدار معتبر نیست!")
+        return
+    
+    if target.startswith('@'):
+        try:
+            user = bot.get_chat(target)
+            target_country = get_country_by_user(user.id)
+            if not target_country:
+                bot.reply_to(message, "❌ کاربر مورد نظر کشوری ندارد!")
+                return
+        except:
+            bot.reply_to(message, "❌ کاربر یافت نشد!")
+            return
+    else:
+        bot.reply_to(message, "❌ از @username استفاده کنید!")
+        return
+    
+    # بررسی منابع
+    if goods == 'oil' and country[11] < amount:
+        bot.reply_to(message, f"❌ نفت کافی نیست! شما {country[11]} نفت دارید.")
+        return
+    elif goods == 'money' and country[10] < amount:
+        bot.reply_to(message, f"❌ پول کافی نیست! شما {country[10]:,} پول دارید.")
+        return
+    else:
+        # بررسی سایر منابع
+        resource_map = {'gold': 12, 'iron': 13, 'stones': 14, 'wood': 15, 
+                       'food': 16, 'meat': 17, 'clothes': 18}
+        if goods in resource_map:
+            idx = resource_map[goods]
+            if country[idx] < amount:
+                bot.reply_to(message, f"❌ {goods} کافی نیست!")
+                return
+        else:
+            bot.reply_to(message, f"❌ کالای {goods} معتبر نیست!")
+            return
+    
+    # ارسال درخواست تجارت
+    markup = types.InlineKeyboardMarkup()
+    markup.add(
+        types.InlineKeyboardButton("✅ پذیرش", callback_data=f"trade_accept_{country[0]}_{target_country[0]}_{goods}_{amount}"),
+        types.InlineKeyboardButton("❌ رد", callback_data=f"trade_reject_{country[0]}_{target_country[0]}")
+    )
+    
+    bot.send_message(target_country[9], 
+        f"🌐 **درخواست تجارت**\n"
+        f"از: {country[2]} {country[1]}\n"
+        f"کالا: {goods}\n"
+        f"مقدار: {amount}\n"
+        f"💰 قیمت پیشنهادی: {amount * 1000:,} پول",
+        reply_markup=markup
+    )
+    
+    bot.reply_to(message, f"📨 درخواست تجارت به {target_country[1]} ارسال شد!")
+
+# =============================================
+# ۲۸. هندلرهای Callback اضافی
+# =============================================
+
+# این بخش رو به تابع callback_handler اضافه کن
+
+# ========== پذیرش/رد تجارت ==========
+elif data.startswith('trade_accept_'):
+    parts = data.split('_')
+    from_id = int(parts[2])
+    to_id = int(parts[3])
+    goods = parts[4]
+    amount = int(parts[5])
+    
+    from_country = get_country_by_id(from_id)
+    to_country = get_country_by_id(to_id)
+    
+    # انتقال کالا
+    if goods == 'oil':
+        cursor.execute("""
+            UPDATE countries SET oil = oil - ? WHERE id = ?
+        """, (amount, from_id))
+        cursor.execute("""
+            UPDATE countries SET oil = oil + ? WHERE id = ?
+        """, (amount, to_id))
+    elif goods == 'money':
+        cursor.execute("""
+            UPDATE countries SET money = money - ? WHERE id = ?
+        """, (amount, from_id))
+        cursor.execute("""
+            UPDATE countries SET money = money + ? WHERE id = ?
+        """, (amount, to_id))
+    else:
+        resource_map = {'gold': 'gold', 'iron': 'iron', 'stones': 'stones', 
+                       'wood': 'wood', 'food': 'food', 'meat': 'meat', 'clothes': 'clothes'}
+        if goods in resource_map:
+            col = resource_map[goods]
+            cursor.execute(f"UPDATE countries SET {col} = {col} - ? WHERE id = ?", (amount, from_id))
+            cursor.execute(f"UPDATE countries SET {col} = {col} + ? WHERE id = ?", (amount, to_id))
+    
+    conn.commit()
+    
+    log_action(user_id, 'trade_accept', f'{from_id}-{to_id}', f'{goods}={amount}')
+    
+    bot.answer_callback_query(call.id, "✅ تجارت تایید شد!")
+    bot.edit_message_text("✅ تجارت تایید شد!", chat_id, call.message.message_id)
+    
+    bot.send_message(from_country[9], f"✅ تجارت {goods} با {to_country[1]} تایید شد!")
+    bot.send_message(to_country[9], f"✅ تجارت {goods} با {from_country[1]} تکمیل شد!")
+
+elif data.startswith('trade_reject_'):
+    bot.answer_callback_query(call.id, "❌ تجارت رد شد!")
+    bot.edit_message_text("❌ تجارت رد شد!", chat_id, call.message.message_id)
+
+# ========== پذیرش/رد آتش‌بس ==========
+elif data.startswith('ceasefire_accept_'):
+    war_id = int(data.split('_')[2])
+    
+    cursor.execute("""
+        UPDATE wars SET status = 'ceasefire', ended_at = ? WHERE id = ?
+    """, (datetime.now().isoformat(), war_id))
+    conn.commit()
+    
+    war = cursor.fetchone()
+    if war:
+        bot.send_message(CHANNEL_ID, 
+            f"🤝 **آتش‌بس!**\n"
+            f"جنگ بین کشورها به پایان رسید."
+        )
+    
+    bot.answer_callback_query(call.id, "✅ آتش‌بس پذیرفته شد!")
+    bot.edit_message_text("✅ آتش‌بس پذیرفته شد!", chat_id, call.message.message_id)
+
+elif data.startswith('ceasefire_reject_'):
+    bot.answer_callback_query(call.id, "❌ آتش‌بس رد شد!")
+    bot.edit_message_text("❌ آتش‌بس رد شد!", chat_id, call.message.message_id)
+
+# =============================================
+# ۲۹. سیستم اعلان‌ها و پیام‌های خودکار
+# =============================================
+
+def send_notification(user_id: int, message: str):
+    """ارسال اعلان به کاربر"""
+    try:
+        bot.send_message(user_id, message, parse_mode='HTML')
+    except:
+        pass
+
+def check_wars():
+    """بررسی جنگ‌های فعال و ارسال اعلان"""
+    cursor.execute("""
+        SELECT * FROM wars WHERE status IN ('declared', 'active')
+    """)
+    wars = cursor.fetchall()
+    
+    for war in wars:
+        attacker = get_country_by_id(war[1])
+        defender = get_country_by_id(war[2])
+        
+        if attacker and defender:
+            # ارسال اعلان به هر دو طرف
+            send_notification(attacker[9], 
+                f"⚔️ **جنگ فعال**\n"
+                f"شما در جنگ با {defender[2]} {defender[1]} هستید!"
+            )
+            send_notification(defender[9], 
+                f"⚔️ **جنگ فعال**\n"
+                f"شما در جنگ با {attacker[2]} {attacker[1]} هستید!"
+            )
+
+# =============================================
+# ۳۰. اجرای نهایی
+# =============================================
+
+if __name__ == "__main__":
+    print("=" * 60)
+    print("🌍 WAR BOT - Telegram World War Strategy Game")
+    print("=" * 60)
+    print(f"👑 مالک: {ADMIN_ID}")
+    print(f"🌍 تعداد کشورها: {len(get_all_countries())}")
+    print(f"⭐ VIP: {len([c for c in get_all_countries() if c[3]])}")
+    print(f"🏙️ تعداد شهرها: {sum(len(get_cities(c[0])) for c in get_all_countries())}")
+    print("=" * 60)
+    
+    # شروع تردها
+    start_turn_thread()
+    start_suez_thread()
+    
+    # اجرای ربات
+    try:
+        print("🚀 ربات در حال اجراست...")
+        bot.infinity_polling()
+    except KeyboardInterrupt:
+        print("\n🛑 ربات متوقف شد")
+    except Exception as e:
+        print(f"❌ خطا: {e}")
+    finally:
+        conn.close()
+        print("✅ دیتابیس بسته شد")
