@@ -1262,6 +1262,78 @@ def callback_handler(call):
         log_action(user_id, 'build_defense', city[2], f'level {city[5]+1}')
         bot.answer_callback_query(call.id, f"✅ پدافند شهر به سطح {city[5]+1} ارتقا یافت!")
         callback_handler(call)
+
+    # ========== پذیرش/رد تجارت ==========
+    elif data.startswith('trade_accept_'):
+        parts = data.split('_')
+        from_id = int(parts[2])
+        to_id = int(parts[3])
+        goods = parts[4]
+        amount = int(parts[5])
+        
+        from_country = get_country_by_id(from_id)
+        to_country = get_country_by_id(to_id)
+        
+        # انتقال کالا
+        if goods == 'oil':
+            cursor.execute("""
+                UPDATE countries SET oil = oil - ? WHERE id = ?
+            """, (amount, from_id))
+            cursor.execute("""
+                UPDATE countries SET oil = oil + ? WHERE id = ?
+            """, (amount, to_id))
+        elif goods == 'money':
+            cursor.execute("""
+                UPDATE countries SET money = money - ? WHERE id = ?
+            """, (amount, from_id))
+            cursor.execute("""
+                UPDATE countries SET money = money + ? WHERE id = ?
+            """, (amount, to_id))
+        else:
+            resource_map = {'gold': 'gold', 'iron': 'iron', 'stones': 'stones', 
+                           'wood': 'wood', 'food': 'food', 'meat': 'meat', 'clothes': 'clothes'}
+            if goods in resource_map:
+                col = resource_map[goods]
+                cursor.execute(f"UPDATE countries SET {col} = {col} - ? WHERE id = ?", (amount, from_id))
+                cursor.execute(f"UPDATE countries SET {col} = {col} + ? WHERE id = ?", (amount, to_id))
+        
+        conn.commit()
+        
+        log_action(user_id, 'trade_accept', f'{from_id}-{to_id}', f'{goods}={amount}')
+        
+        bot.answer_callback_query(call.id, "✅ تجارت تایید شد!")
+        bot.edit_message_text("✅ تجارت تایید شد!", chat_id, call.message.message_id)
+        
+        bot.send_message(from_country[9], f"✅ تجارت {goods} با {to_country[1]} تایید شد!")
+        bot.send_message(to_country[9], f"✅ تجارت {goods} با {from_country[1]} تکمیل شد!")
+    
+    elif data.startswith('trade_reject_'):
+        bot.answer_callback_query(call.id, "❌ تجارت رد شد!")
+        bot.edit_message_text("❌ تجارت رد شد!", chat_id, call.message.message_id)
+    
+    # ========== پذیرش/رد آتش‌بس ==========
+    elif data.startswith('ceasefire_accept_'):
+        war_id = int(data.split('_')[2])
+        
+        cursor.execute("""
+            UPDATE wars SET status = 'ceasefire', ended_at = ? WHERE id = ?
+        """, (datetime.now().isoformat(), war_id))
+        conn.commit()
+        
+        war = cursor.fetchone()
+        if war:
+            bot.send_message(CHANNEL_ID, 
+                f"🤝 **آتش‌بس!**\n"
+                f"جنگ بین کشورها به پایان رسید."
+            )
+        
+        bot.answer_callback_query(call.id, "✅ آتش‌بس پذیرفته شد!")
+        bot.edit_message_text("✅ آتش‌بس پذیرفته شد!", chat_id, call.message.message_id)
+    
+    elif data.startswith('ceasefire_reject_'):
+        bot.answer_callback_query(call.id, "❌ آتش‌بس رد شد!")
+        bot.edit_message_text("❌ آتش‌بس رد شد!", chat_id, call.message.message_id)
+
     
     # ========== برگشت به منو ==========
     elif data.startswith('back_menu_'):
@@ -2415,19 +2487,6 @@ def start_suez_thread():
     thread = threading.Thread(target=suez_income_thread, daemon=True)
     thread.start()
     print("✅ ترد درآمد کانال سوئز شروع شد")
-
-# =============================================
-# ۲۲. اجرا
-# =============================================
-
-if __name__ == "__main__":
-    print("=" * 60)
-    print("🌍 WAR BOT - Telegram World War Strategy Game")
-    print("=" * 60)
-    print(f"👑 مالک: {ADMIN_ID}")
-    print(f"🌍 تعداد کشورها: {len(get_all_countries())}")
-    print(f"⭐ VIP: {len([c for c in get_all_countries() if c[3]])}")
-    print("=" * 60)
     
 # =============================================
 # ۲۳. سیستم خرید پهپاد
@@ -2811,82 +2870,6 @@ def trade_command(message):
     
     bot.reply_to(message, f"📨 درخواست تجارت به {target_country[1]} ارسال شد!")
 
-# =============================================
-# ۲۸. هندلرهای Callback اضافی
-# =============================================
-
-# این بخش رو به تابع callback_handler اضافه کن
-
-# ========== پذیرش/رد تجارت ==========
-elif data.startswith('trade_accept_'):
-    parts = data.split('_')
-    from_id = int(parts[2])
-    to_id = int(parts[3])
-    goods = parts[4]
-    amount = int(parts[5])
-    
-    from_country = get_country_by_id(from_id)
-    to_country = get_country_by_id(to_id)
-    
-    # انتقال کالا
-    if goods == 'oil':
-        cursor.execute("""
-            UPDATE countries SET oil = oil - ? WHERE id = ?
-        """, (amount, from_id))
-        cursor.execute("""
-            UPDATE countries SET oil = oil + ? WHERE id = ?
-        """, (amount, to_id))
-    elif goods == 'money':
-        cursor.execute("""
-            UPDATE countries SET money = money - ? WHERE id = ?
-        """, (amount, from_id))
-        cursor.execute("""
-            UPDATE countries SET money = money + ? WHERE id = ?
-        """, (amount, to_id))
-    else:
-        resource_map = {'gold': 'gold', 'iron': 'iron', 'stones': 'stones', 
-                       'wood': 'wood', 'food': 'food', 'meat': 'meat', 'clothes': 'clothes'}
-        if goods in resource_map:
-            col = resource_map[goods]
-            cursor.execute(f"UPDATE countries SET {col} = {col} - ? WHERE id = ?", (amount, from_id))
-            cursor.execute(f"UPDATE countries SET {col} = {col} + ? WHERE id = ?", (amount, to_id))
-    
-    conn.commit()
-    
-    log_action(user_id, 'trade_accept', f'{from_id}-{to_id}', f'{goods}={amount}')
-    
-    bot.answer_callback_query(call.id, "✅ تجارت تایید شد!")
-    bot.edit_message_text("✅ تجارت تایید شد!", chat_id, call.message.message_id)
-    
-    bot.send_message(from_country[9], f"✅ تجارت {goods} با {to_country[1]} تایید شد!")
-    bot.send_message(to_country[9], f"✅ تجارت {goods} با {from_country[1]} تکمیل شد!")
-
-elif data.startswith('trade_reject_'):
-    bot.answer_callback_query(call.id, "❌ تجارت رد شد!")
-    bot.edit_message_text("❌ تجارت رد شد!", chat_id, call.message.message_id)
-
-# ========== پذیرش/رد آتش‌بس ==========
-elif data.startswith('ceasefire_accept_'):
-    war_id = int(data.split('_')[2])
-    
-    cursor.execute("""
-        UPDATE wars SET status = 'ceasefire', ended_at = ? WHERE id = ?
-    """, (datetime.now().isoformat(), war_id))
-    conn.commit()
-    
-    war = cursor.fetchone()
-    if war:
-        bot.send_message(CHANNEL_ID, 
-            f"🤝 **آتش‌بس!**\n"
-            f"جنگ بین کشورها به پایان رسید."
-        )
-    
-    bot.answer_callback_query(call.id, "✅ آتش‌بس پذیرفته شد!")
-    bot.edit_message_text("✅ آتش‌بس پذیرفته شد!", chat_id, call.message.message_id)
-
-elif data.startswith('ceasefire_reject_'):
-    bot.answer_callback_query(call.id, "❌ آتش‌بس رد شد!")
-    bot.edit_message_text("❌ آتش‌بس رد شد!", chat_id, call.message.message_id)
 
 # =============================================
 # ۲۹. سیستم اعلان‌ها و پیام‌های خودکار
