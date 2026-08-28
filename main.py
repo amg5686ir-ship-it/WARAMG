@@ -14,6 +14,19 @@ import random
 import os
 from datetime import datetime, timedelta
 from typing import Optional, Dict, List, Any
+from datetime import datetime, timedelta  # این خط رو چک کن که باشه
+
+def get_next_turn_time() -> datetime:
+    """دریافت زمان بعدی واریز (هر ۱۲ ساعت)"""
+    now = datetime.now()
+    
+    # ساعت‌های واریز: 8:00 و 20:00
+    if now.hour < 8:
+        return now.replace(hour=8, minute=0, second=0, microsecond=0)
+    elif now.hour < 20:
+        return now.replace(hour=20, minute=0, second=0, microsecond=0)
+    else:
+        return (now + timedelta(days=1)).replace(hour=8, minute=0, second=0, microsecond=0)
 
 # =============================================
 # ۱. پیکربندی
@@ -823,34 +836,112 @@ def start_turn_thread():
 # ۸. کامندهای اصلی
 # =============================================
 
+def get_country_info_text(country) -> str:
+    """ساخت متن اطلاعات کشور با پرچم پویا"""
+    if not country:
+        return "❌ شما هیچ کشوری ندارید!"
+    
+    # پرچم کشور از دیتابیس
+    flag = country[2]  # ستون flag
+    name = country[1]
+    
+    text = f"{flag} **کشور: {name}**\n\n"
+    text += f"💰 پول: ${country[10]:,}\n"
+    text += f"📈 درآمد پول هر نوبت: ${calculate_income(country[0]):,}\n"
+    text += f"🛢️ نفت: {country[11]:,}\n"
+    text += f"📈 تولید نفت هر نوبت: {calculate_oil_income(country[0]):,}\n"
+    text += f"👥 جمعیت: {country[18]:,}\n"
+    text += f"😊 رضایت عمومی: %{country[19]}\n\n"
+    
+    # ========== زمان‌بندی واریز (واقعی) ==========
+    text += "⏰ **زمان‌بندی واریز درآمد (پول و نفت):**\n"
+    
+    # محاسبه زمان‌های بعدی
+    now = datetime.now()
+    next_turn = get_next_turn_time()
+    
+    text += f"🕗 {next_turn.strftime('%H:%M')}\n"
+    text += f"🕘 {(next_turn + timedelta(hours=12)).strftime('%H:%M')}\n\n"
+    
+    # ========== رشد جمعیت ==========
+    text += "📈 جمعیت هر ۱۰ دقیقه بین ۱۰,۰۰۱ تا ۴۹,۹۹۹ نفر به صورت تصادفی افزایش می‌یابد.\n\n"
+    
+    text += "📖 برای آموزش کامل بازی وارد «راهنما» شوید."
+    
+    return text
+
+def get_next_turn_time() -> datetime:
+    """دریافت زمان بعدی واریز (هر ۱۲ ساعت)"""
+    now = datetime.now()
+    
+    # ساعت‌های واریز: 8:00 و 20:00
+    if now.hour < 8:
+        return now.replace(hour=8, minute=0, second=0, microsecond=0)
+    elif now.hour < 20:
+        return now.replace(hour=20, minute=0, second=0, microsecond=0)
+    else:
+        # فردا ساعت 8
+        return (now + timedelta(days=1)).replace(hour=8, minute=0, second=0, microsecond=0)
+
 @bot.message_handler(commands=['start'])
 def start_command(message):
     """دستور start - شروع بازی"""
     user_id = message.from_user.id
     chat_id = message.chat.id
     
-    # بررسی آیا کاربر کشوری دارد
     country = get_country_by_user(user_id)
     
     if country:
-        # کاربر قبلاً کشور دارد - نمایش منو
         menu = main_menu(user_id)
-        bot.send_message(chat_id, 
-            f"🎮 به بازی جنگ جهانی خوش آمدید!\n"
-            f"🏳️ کشور شما: {country[2]} {country[1]}\n"
-            f"⭐ VIP: {'بله' if country[3] else 'خیر'}\n"
-            f"💰 پول: {country[10]:,}\n"
-            f"🛢️ نفت: {country[11]}\n"
-            f"👥 جمعیت: {country[18]:,}",
-            reply_markup=menu, parse_mode='HTML')
+        text = get_country_info_text(country)
+        
+        bot.send_message(
+            chat_id, 
+            text, 
+            reply_markup=menu, 
+            parse_mode='Markdown'
+        )
     else:
         # ❌ کاربر کشور ندارد - پیام خطا
         bot.send_message(chat_id, 
             "❌ **شما هیچ کشوری ندارید!**\n\n"
             "برای دریافت کشور، لطفاً با یکی از ادمین‌های ربات تماس بگیرید.\n"
-            "ادمین‌ها با دستور `/givecountry @username CountryName` به شما کشور می‌دهند.\n\n"
-            "📋 **لیست کشورهای موجود:**",
+            "ادمین‌ها به شما کشور می‌دهند.\n",
             parse_mode='Markdown')
+
+
+@bot.callback_query_handler(func=lambda call: call.data.startswith('buildings_'))
+def buildings_menu(call):
+    """منوی ساختمان‌ها"""
+    user_id = call.from_user.id
+    chat_id = call.message.chat.id
+    
+    country = get_country_by_user(user_id)
+    if not country:
+        bot.send_message(chat_id, "❌ شما هیچ کشوری ندارید!")
+        bot.answer_callback_query(call.id)
+        return
+    
+    markup = types.InlineKeyboardMarkup(row_width=2)
+    
+    buttons = [
+        ("🏭 کارخانه", f"factory_{country[0]}"),
+        ("🏢 شرکت", f"company_{country[0]}"),
+        ("⚡ نیروگاه", f"powerplant_{country[0]}"),
+        ("🏗️ زیرساخت", f"infrastructure_{country[0]}"),
+        ("🔙 بازگشت", f"back_menu_{user_id}")
+    ]
+    
+    for label, callback in buttons:
+        markup.add(types.InlineKeyboardButton(label, callback_data=callback))
+    
+    bot.edit_message_text(
+        f"🏭 **ساختمان‌های {country[2]} {country[1]}**\n\n"
+        f"برای ساخت یا مدیریت ساختمان‌ها، یکی از گزینه‌ها را انتخاب کنید:",
+        chat_id, call.message.message_id,
+        reply_markup=markup, parse_mode='Markdown'
+    )
+    bot.answer_callback_query(call.id)
 
 @bot.message_handler(commands=['help'])
 def help_command(message):
@@ -913,35 +1004,13 @@ def my_country_command(message):
         bot.reply_to(message, "❌ شما هیچ کشوری ندارید!")
         return
     
-    info = f"🏳️ {country[2]} **{country[1]}**\n"
-    info += f"⭐ VIP: {'✅' if country[3] else '❌'}\n\n"
-    info += f"💰 پول: {country[10]:,}\n"
-    info += f"📈 درآمد هر نوبت: {calculate_income(country[0]):,}\n"
-    info += f"🛢️ نفت: {country[11]}\n"
-    info += f"📈 تولید نفت: {calculate_oil_income(country[0])}\n"
-    info += f"👥 جمعیت: {country[18]:,}\n"
-    info += f"😊 رضایت: {country[19]}%\n"
-    info += f"⚔️ آمادگی نظامی: {country[20]}%\n\n"
+    # استفاده از تابع جدید
+    text = get_country_info_text(country)
     
-    if country[4]:
-        status = "🔓 باز" if country[6] else "🔒 بسته"
-        info += f"🌊 {country[5]}: {status}\n"
+    markup = types.InlineKeyboardMarkup()
+    markup.add(types.InlineKeyboardButton("🔙 بازگشت به منو", callback_data=f"back_menu_{user_id}"))
     
-    if country[7]:
-        info += "🚫 **این کشور تحریم شده است!**\n"
-    
-    # آمار نظامی
-    units = get_military_units(country[0])
-    total_power = sum(u[5] * u[3] for u in units)  # power * count
-    
-    missiles = get_missiles(country[0])
-    total_missile_power = sum(m[5] * m[3] for m in missiles)  # power * count
-    
-    info += f"\n⚔️ قدرت کل ارتش: {total_power:,}\n"
-    info += f"🚀 قدرت کل موشکی: {total_missile_power:,}\n"
-    info += f"🏙️ تعداد شهرها: {len(get_cities(country[0]))}"
-    
-    bot.reply_to(message, info, parse_mode='Markdown')
+    bot.reply_to(message, text, reply_markup=markup, parse_mode='Markdown')
 
 @bot.message_handler(commands=['countries'])
 def countries_command(message):
@@ -968,32 +1037,66 @@ def countries_command(message):
 # =============================================
 
 def main_menu(user_id: int) -> types.InlineKeyboardMarkup:
-    """منوی اصلی"""
+    """منوی اصلی - طراحی جدید"""
+    country = get_country_by_user(user_id)
+    
     markup = types.InlineKeyboardMarkup(row_width=2)
     
-    buttons = [
-        ("🌍 کشور من", f"country_{user_id}"),
-        ("💰 اقتصاد", f"economy_{user_id}"),
-        ("🏙️ شهرها", f"cities_{user_id}"),
-        ("⚔️ ارتش", f"army_{user_id}"),
-        ("✈️ نیروی هوایی", f"airforce_{user_id}"),
-        ("🚢 نیروی دریایی", f"navy_{user_id}"),
-        ("🛡️ پدافند", f"defense_{user_id}"),
-        ("🚀 موشک‌ها", f"missiles_{user_id}"),
-        ("🛸 پهپادها", f"drones_{user_id}"),
-        ("💻 سایبری", f"cyber_{user_id}"),
-        ("🤝 دیپلماسی", f"diplomacy_{user_id}"),
-        ("🌐 تجارت", f"trade_{user_id}"),
-        ("🕵️ اطلاعات", f"intel_{user_id}"),
-        ("⚔️ جنگ", f"war_{user_id}"),
-        ("🏳️ اتحادها", f"alliances_{user_id}"),
-        ("📊 آمار", f"stats_{user_id}"),
-    ]
+    # ردیف ۱: کشور من و اقتصاد
+    markup.add(
+        types.InlineKeyboardButton("🌍 کشور من", callback_data=f"country_{user_id}"),
+        types.InlineKeyboardButton("💰 اقتصاد", callback_data=f"economy_{user_id}")
+    )
     
-    for label, callback in buttons:
-        markup.add(types.InlineKeyboardButton(label, callback_data=callback))
+    # ردیف ۲: شهرها و ساختمان‌ها
+    markup.add(
+        types.InlineKeyboardButton("🏙️ شهرها", callback_data=f"cities_{user_id}"),
+        types.InlineKeyboardButton("🏭 ساختمان‌ها", callback_data=f"buildings_{user_id}")
+    )
     
-    # دکمه پنل مدیریت برای ادمین‌ها
+    # ردیف ۳: ارتش و نیروی هوایی
+    markup.add(
+        types.InlineKeyboardButton("⚔️ ارتش", callback_data=f"army_{user_id}"),
+        types.InlineKeyboardButton("✈️ نیروی هوایی", callback_data=f"airforce_{user_id}")
+    )
+    
+    # ردیف ۴: نیروی دریایی و پدافند
+    markup.add(
+        types.InlineKeyboardButton("🚢 نیروی دریایی", callback_data=f"navy_{user_id}"),
+        types.InlineKeyboardButton("🛡️ پدافند", callback_data=f"defense_{user_id}")
+    )
+    
+    # ردیف ۵: موشک‌ها و پهپادها
+    markup.add(
+        types.InlineKeyboardButton("🚀 موشک‌ها", callback_data=f"missiles_{user_id}"),
+        types.InlineKeyboardButton("🛸 پهپادها", callback_data=f"drones_{user_id}")
+    )
+    
+    # ردیف ۶: سایبری و دیپلماسی
+    markup.add(
+        types.InlineKeyboardButton("💻 سایبری", callback_data=f"cyber_{user_id}"),
+        types.InlineKeyboardButton("🤝 دیپلماسی", callback_data=f"diplomacy_{user_id}")
+    )
+    
+    # ردیف ۷: تجارت و اطلاعات
+    markup.add(
+        types.InlineKeyboardButton("🌐 تجارت", callback_data=f"trade_{user_id}"),
+        types.InlineKeyboardButton("🕵️ اطلاعات", callback_data=f"intel_{user_id}")
+    )
+    
+    # ردیف ۸: جنگ و اتحادها
+    markup.add(
+        types.InlineKeyboardButton("⚔️ جنگ", callback_data=f"war_{user_id}"),
+        types.InlineKeyboardButton("🏳️ اتحادها", callback_data=f"alliances_{user_id}")
+    )
+    
+    # ردیف ۹: آمار و راهنما
+    markup.add(
+        types.InlineKeyboardButton("📊 آمار", callback_data=f"stats_{user_id}"),
+        types.InlineKeyboardButton("📖 راهنما", callback_data="help")
+    )
+    
+    # دکمه پنل مدیریت (فقط ادمین‌ها)
     if is_admin(user_id):
         markup.add(types.InlineKeyboardButton("🛡️ پنل مدیریت", callback_data=f"admin_panel_{user_id}"))
     
