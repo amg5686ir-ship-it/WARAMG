@@ -549,48 +549,56 @@ def seed_countries():
         return
     
     for country in COUNTRIES_DATA:
-        # تعیین منابع اولیه
+        # ========== منابع اولیه جدید ==========
         if country.get('vip', False):
-            money = 10000000
-            oil = 1000
-            gold = 1000
-            iron = 5000
-            stones = 5000
-            wood = 5000
-            food = 5000
-            meat = 5000
-            clothes = 5000
-            population = 5000000
+            money = 5000000    # ۵ میلیون دلار برای VIP
+            oil = 0            # نفت صفر
+            gold = 0
+            iron = 0
+            stones = 0
+            wood = 0
+            food = 0
+            meat = 0
+            clothes = 0
         else:
-            money = 1000000
-            oil = 100
-            gold = 100
-            iron = 500
-            stones = 500
-            wood = 500
-            food = 500
-            meat = 500
-            clothes = 500
-            population = 1000000
+            money = 500000     # ۵۰۰ هزار دلار برای عادی
+            oil = 0            # نفت صفر
+            gold = 0
+            iron = 0
+            stones = 0
+            wood = 0
+            food = 0
+            meat = 0
+            clothes = 0
+        
+        # ========== جمعیت اولیه = ۵۰۰ میلیون ==========
+        population = 500000000
+        
+        # ========== استرات (VIP ها تنگه دارن) ==========
+        has_strait = 1 if country.get('strait', False) else 0
+        strait_name = country.get('strait_name', '')
         
         cursor.execute('''
         INSERT INTO countries (
             name, flag, is_vip, has_strait, strait_name,
             money, oil, gold, iron, stones, wood, food, meat, clothes,
-            population
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            population, happiness, military_readiness
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ''', (
             country['name'],
             country['flag'],
             1 if country.get('vip', False) else 0,
-            1 if country.get('strait', False) else 0,
-            country.get('strait_name', ''),
+            has_strait,
+            strait_name,
             money, oil, gold, iron, stones, wood, food, meat, clothes,
-            population
+            population, 70, 50  # happiness=70, military_readiness=50
         ))
     
     conn.commit()
     print(f"✅ {len(COUNTRIES_DATA)} کشور با موفقیت اضافه شدند")
+    print(f"💰 پول اولیه: عادی=۵۰۰,۰۰۰$ | VIP=۵,۰۰۰,۰۰۰$")
+    print(f"🛢️ نفت اولیه: ۰ (همه کشورها)")
+    print(f"👥 جمعیت اولیه: ۵۰۰,۰۰۰,۰۰۰ (همه کشورها)")
 
 seed_countries()
 
@@ -730,6 +738,59 @@ def log_action(actor_id: int, action: str, target: str = '', detail: str = ''):
     conn.commit()
 
 # =============================================
+# ترد افزایش جمعیت (هر ۱۰ دقیقه)
+# =============================================
+
+def population_growth_loop():
+    """حلقه افزایش جمعیت هر ۱۰ دقیقه"""
+    while True:
+        try:
+            countries = get_all_countries()
+            
+            for country in countries:
+                country_id = country[0]
+                current_population = country[18]
+                
+                # افزایش تصادفی بین ۱۰,۰۰۱ تا ۴۹,۹۹۹
+                growth = random.randint(10001, 49999)
+                new_population = current_population + growth
+                
+                # به‌روزرسانی دیتابیس
+                cursor.execute("""
+                    UPDATE countries 
+                    SET population = ?
+                    WHERE id = ?
+                """, (new_population, country_id))
+                conn.commit()
+                
+                # ارسال پیام به کاربر
+                owner_id = country[9]  # owner_id
+                if owner_id:
+                    try:
+                        bot.send_message(
+                            owner_id,
+                            f"👥 **افزایش جمعیت!**\n"
+                            f"🇺🇳 {growth:,} نفر به جمعیت {country[1]} اضافه شد.\n"
+                            f"👥 جمعیت فعلی: {new_population:,} نفر",
+                            parse_mode='Markdown'
+                        )
+                    except:
+                        pass  # اگر کاربر ربات رو بلاک کرده باشه
+            
+            print(f"👥 افزایش جمعیت برای {len(countries)} کشور انجام شد")
+            
+        except Exception as e:
+            print(f"❌ خطا در افزایش جمعیت: {e}")
+        
+        time.sleep(600)  # ۱۰ دقیقه
+
+def start_population_thread():
+    """شروع ترد افزایش جمعیت"""
+    thread = threading.Thread(target=population_growth_loop, daemon=True)
+    thread.start()
+    print("✅ ترد افزایش جمعیت شروع شد (هر ۱۰ دقیقه)")
+
+# =============================================
 # ۶. سیستم اقتصادی - درآمد نوبتی
 # =============================================
 
@@ -837,35 +898,32 @@ def start_turn_thread():
 # =============================================
 
 def get_country_info_text(country) -> str:
-    """ساخت متن اطلاعات کشور با پرچم پویا"""
+    """ساخت متن اطلاعات کشور"""
     if not country:
         return "❌ شما هیچ کشوری ندارید!"
     
-    # پرچم کشور از دیتابیس
-    flag = country[2]  # ستون flag
+    flag = country[2]
     name = country[1]
+    population = country[18]  # جمعیت واقعی
     
     text = f"{flag} **کشور: {name}**\n\n"
     text += f"💰 پول: ${country[10]:,}\n"
     text += f"📈 درآمد پول هر نوبت: ${calculate_income(country[0]):,}\n"
     text += f"🛢️ نفت: {country[11]:,}\n"
     text += f"📈 تولید نفت هر نوبت: {calculate_oil_income(country[0]):,}\n"
-    text += f"👥 جمعیت: {country[18]:,}\n"
+    text += f"👥 جمعیت: {population:,}\n"  # ✅ جمعیت واقعی
     text += f"😊 رضایت عمومی: %{country[19]}\n\n"
     
-    # ========== زمان‌بندی واریز (واقعی) ==========
+    # زمان‌بندی واریز
     text += "⏰ **زمان‌بندی واریز درآمد (پول و نفت):**\n"
     
-    # محاسبه زمان‌های بعدی
     now = datetime.now()
     next_turn = get_next_turn_time()
-    
     text += f"🕗 {next_turn.strftime('%H:%M')}\n"
     text += f"🕘 {(next_turn + timedelta(hours=12)).strftime('%H:%M')}\n\n"
     
-    # ========== رشد جمعیت ==========
-    text += "📈 جمعیت هر ۱۰ دقیقه بین ۱۰,۰۰۱ تا ۴۹,۹۹۹ نفر به صورت تصادفی افزایش می‌یابد.\n\n"
-    
+    # رشد جمعیت
+    text += "📈 جمعیت هر ۱۰ دقیقه بین ۱۰,۰۰۱ تا ۴۹,۹۹۹ نفر افزایش می‌یابد.\n\n"
     text += "📖 برای آموزش کامل بازی وارد «راهنما» شوید."
     
     return text
@@ -3024,6 +3082,7 @@ if __name__ == "__main__":
     # شروع تردها
     start_turn_thread()
     start_suez_thread()
+    start_population_thread()  # ✅ جدید
     
     # اجرای ربات
     try:
