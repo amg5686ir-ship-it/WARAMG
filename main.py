@@ -833,7 +833,7 @@ def start_command(message):
     country = get_country_by_user(user_id)
     
     if country:
-        # کاربر قبلاً کشور دارد
+        # کاربر قبلاً کشور دارد - نمایش منو
         menu = main_menu(user_id)
         bot.send_message(chat_id, 
             f"🎮 به بازی جنگ جهانی خوش آمدید!\n"
@@ -844,24 +844,13 @@ def start_command(message):
             f"👥 جمعیت: {country[18]:,}",
             reply_markup=menu, parse_mode='HTML')
     else:
-        # کاربر کشور ندارد - نمایش کشورهای آزاد
-        free = get_free_countries()
-        if not free:
-            bot.send_message(chat_id, "❌ هیچ کشور آزادی وجود ندارد! با ادمین تماس بگیرید.")
-            return
-        
-        # پیشنهاد کشورهای آزاد به کاربر
-        menu = types.InlineKeyboardMarkup(row_width=2)
-        for c in free[:10]:
-            menu.add(types.InlineKeyboardButton(
-                f"{c[2]} {c[1]} {'⭐' if c[3] else ''}",
-                callback_data=f"take_country_{c[0]}"
-            ))
+        # ❌ کاربر کشور ندارد - پیام خطا
         bot.send_message(chat_id, 
-            "🌍 به بازی جنگ جهانی خوش آمدید!\n"
-            "یک کشور را انتخاب کنید:\n\n"
-            "⚠️ توجه: انتخاب کشور به معنی پذیرش قوانین بازی است.",
-            reply_markup=menu)
+            "❌ **شما هیچ کشوری ندارید!**\n\n"
+            "برای دریافت کشور، لطفاً با یکی از ادمین‌های ربات تماس بگیرید.\n"
+            "ادمین‌ها با دستور `/givecountry @username CountryName` به شما کشور می‌دهند.\n\n"
+            "📋 **لیست کشورهای موجود:**",
+            parse_mode='Markdown')
 
 @bot.message_handler(commands=['help'])
 def help_command(message):
@@ -1385,6 +1374,8 @@ def admin_panel_menu() -> types.InlineKeyboardMarkup:
 @bot.message_handler(commands=['givecountry'])
 def give_country_command(message):
     """دادن کشور به کاربر - /givecountry @username CountryName"""
+    
+    # ✅ فقط ادمین‌ها
     if not is_admin(message.from_user.id):
         bot.reply_to(message, "❌ شما ادمین نیستید!")
         return
@@ -1438,7 +1429,16 @@ def give_country_command(message):
     
     log_action(message.from_user.id, 'give_country', country_name, str(target_id))
     bot.reply_to(message, f"✅ کشور {country_name} به کاربر داده شد!")
-
+    
+    # اطلاع به کاربر
+    try:
+        bot.send_message(target_id, 
+            f"🎉 شما صاحب کشور **{country_name}** شدید!\n"
+            f"برای شروع بازی از /start استفاده کنید."
+        )
+    except:
+        pass
+        
 @bot.message_handler(commands=['freecountries'])
 def free_countries_admin(message):
     """لیست کشورهای آزاد - /freecountries"""
